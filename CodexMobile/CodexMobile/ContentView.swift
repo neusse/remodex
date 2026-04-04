@@ -27,6 +27,7 @@ struct ContentView: View {
     @State private var isSearchActive = false
     @State private var isRetryingBridgeUpdate = false
     @State private var isPreparingManualScanner = false
+    @State private var macSwitchTask: Task<Void, Never>?
     @State private var threadCompletionBannerDismissTask: Task<Void, Never>?
     @State private var suppressAutomaticThreadSelection = false
     @AppStorage("codex.hasSeenOnboarding") private var hasSeenOnboarding = false
@@ -231,17 +232,7 @@ struct ContentView: View {
                     if isShowingMyMacsScanner {
                         isShowingMyMacsScanner = false
                         prepareForMacContextTransition()
-                        do {
-                            try await viewModel.switchToScannedMac(
-                                pairingPayload: pairingPayload,
-                                codex: codex
-                            )
-                            await MainActor.run {
-                                navigationPath = NavigationPath()
-                            }
-                        } catch {
-                            // Error is already exposed through CodexService state.
-                        }
+                        startScannedMacSwitch(pairingPayload)
                     } else {
                         await viewModel.connectToRelay(
                             pairingPayload: pairingPayload,
@@ -301,8 +292,11 @@ struct ContentView: View {
                             onScanQRCode: presentMyMacsScanner,
                             onSwitchMac: switchToTrustedMac,
                             onForgetMac: forgetTrustedMac,
+                            onCancelSwitch: cancelMacSwitch,
                             isSwitchingMac: viewModel.isSwitchingMac,
-                            switchingMacDeviceId: viewModel.switchingMacDeviceId
+                            isCancellingMacSwitch: viewModel.isCancellingMacSwitch,
+                            switchingMacDeviceId: viewModel.switchingMacDeviceId,
+                            switchNotice: viewModel.macSwitchNotice
                         )
                         .adaptiveNavigationBar()
                     }
@@ -741,7 +735,7 @@ struct ContentView: View {
             return
         }
         prepareForMacContextTransition()
-        Task {
+        macSwitchTask = Task {
             do {
                 try await viewModel.switchToTrustedMac(deviceId: deviceId, codex: codex)
                 await MainActor.run {
@@ -750,6 +744,43 @@ struct ContentView: View {
             } catch {
                 // Error is already routed through CodexService state for the page to present.
             }
+            await MainActor.run {
+                macSwitchTask = nil
+            }
+        }
+    }
+
+    private func startScannedMacSwitch(_ pairingPayload: CodexPairingQRPayload) {
+        guard !viewModel.isSwitchingMac else {
+            return
+        }
+
+        macSwitchTask = Task {
+            do {
+                try await viewModel.switchToScannedMac(
+                    pairingPayload: pairingPayload,
+                    codex: codex
+                )
+                await MainActor.run {
+                    navigationPath = NavigationPath()
+                }
+            } catch {
+                // Error is already exposed through CodexService state.
+            }
+            await MainActor.run {
+                macSwitchTask = nil
+            }
+        }
+    }
+
+    private func cancelMacSwitch() {
+        guard let macSwitchTask else {
+            return
+        }
+
+        macSwitchTask.cancel()
+        Task {
+            await viewModel.requestMacSwitchCancellation(codex: codex)
         }
     }
 

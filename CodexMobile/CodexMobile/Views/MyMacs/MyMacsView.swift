@@ -12,8 +12,11 @@ struct MyMacsView: View {
     let onScanQRCode: () -> Void
     let onSwitchMac: (String) -> Void
     let onForgetMac: (String) -> Void
+    let onCancelSwitch: () -> Void
     let isSwitchingMac: Bool
+    let isCancellingMacSwitch: Bool
     let switchingMacDeviceId: String?
+    let switchNotice: String?
 
     @State private var pendingForgetDeviceId: String?
     @State private var pendingSwitchDeviceId: String?
@@ -30,6 +33,12 @@ struct MyMacsView: View {
                 return lhsIsCurrent
             }
 
+            let lhsIsPrevious = lhs.macDeviceId == codex.normalizedPreviousTrustedMacDeviceId
+            let rhsIsPrevious = rhs.macDeviceId == codex.normalizedPreviousTrustedMacDeviceId
+            if lhsIsPrevious != rhsIsPrevious {
+                return lhsIsPrevious
+            }
+
             return (lhs.lastUsedAt ?? lhs.lastPairedAt) > (rhs.lastUsedAt ?? rhs.lastPairedAt)
         }
     }
@@ -41,6 +50,10 @@ struct MyMacsView: View {
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 24) {
+                    if let switchNotice, !switchNotice.isEmpty {
+                        switchNoticeBanner(switchNotice)
+                    }
+
                     if let currentTrustedMac {
                         sectionTitle("Current Mac")
                         currentMacCard(for: currentTrustedMac)
@@ -179,6 +192,7 @@ struct MyMacsView: View {
 
     private func pairedMacRow(for trustedMac: CodexTrustedMacRecord) -> some View {
         let isCurrent = trustedMac.macDeviceId == codex.normalizedCurrentTrustedMacDeviceId
+        let isPrevious = trustedMac.macDeviceId == codex.normalizedPreviousTrustedMacDeviceId
         let isSwitching = trustedMac.macDeviceId == switchingMacDeviceId
         let identity = displayIdentity(for: trustedMac)
 
@@ -194,6 +208,10 @@ struct MyMacsView: View {
 
                     if isCurrent {
                         Text("Current")
+                            .font(AppFont.caption(weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    } else if isPrevious {
+                        Text("Previous")
                             .font(AppFont.caption(weight: .semibold))
                             .foregroundStyle(.secondary)
                     }
@@ -264,21 +282,50 @@ struct MyMacsView: View {
                 .ignoresSafeArea()
 
             MyMacCard {
-                VStack(spacing: 12) {
+                VStack(spacing: 14) {
                     ProgressView()
+                        .controlSize(.regular)
                     Text("Switching Mac…")
                         .font(AppFont.subheadline(weight: .semibold))
                         .foregroundStyle(.primary)
+                        .multilineTextAlignment(.center)
+
+                    if let phaseLabel = switchingConnectionPhaseLabel {
+                        Text(phaseLabel)
+                            .font(AppFont.caption(weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    if let secureLabel = switchingSecureStatusLabel {
+                        Text(secureLabel)
+                            .font(AppFont.caption())
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
 
                     if let switchingMacDeviceId,
                        let trustedMac = codex.trustedMacRecord(for: switchingMacDeviceId) {
                         Text(displayIdentity(for: trustedMac).primaryName)
                             .font(AppFont.caption())
                             .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                     }
+
+                    Button(isCancellingMacSwitch ? "Cancelling..." : "Cancel") {
+                        onCancelSwitch()
+                    }
+                    .font(AppFont.body(weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .adaptiveGlass(.regular, in: Capsule())
+                    .disabled(isCancellingMacSwitch)
                 }
-                .frame(width: 180)
+                .frame(width: 220)
             }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .myMacCardAlignment(.center)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .padding(.horizontal, 24)
         }
@@ -289,6 +336,20 @@ struct MyMacsView: View {
         Text(title)
             .font(AppFont.body(weight: .medium))
             .foregroundStyle(.secondary)
+    }
+
+    private func switchNoticeBanner(_ text: String) -> some View {
+        MyMacCard {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                Text(text)
+                    .font(AppFont.caption())
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var requiresSwitchConfirmation: Bool {
@@ -339,6 +400,9 @@ struct MyMacsView: View {
         if trustedMac.macDeviceId == codex.normalizedCurrentTrustedMacDeviceId {
             return "Selected"
         }
+        if trustedMac.macDeviceId == codex.normalizedPreviousTrustedMacDeviceId {
+            return "Previous"
+        }
         return "Saved"
     }
 
@@ -363,6 +427,15 @@ struct MyMacsView: View {
                     .fill(Color.primary.opacity(0.06))
             )
     }
+
+    private var switchingConnectionPhaseLabel: String? {
+        let label = codex.connectionPhaseDisplayLabel
+        return label == "Offline" ? nil : label
+    }
+
+    private var switchingSecureStatusLabel: String? {
+        codex.secureConnectionDisplayLabel
+    }
 }
 
 private struct MyMacDisplayIdentity {
@@ -371,16 +444,34 @@ private struct MyMacDisplayIdentity {
 }
 
 private struct MyMacCard<Content: View>: View {
+    @Environment(\.myMacCardContentAlignment) private var contentAlignment
     @ViewBuilder let content: Content
 
     var body: some View {
         content
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: contentAlignment)
             .padding(16)
             .adaptiveGlass(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(Color.primary.opacity(0.06), lineWidth: 1)
             )
+    }
+}
+
+private struct MyMacCardContentAlignmentKey: EnvironmentKey {
+    static let defaultValue: Alignment = .leading
+}
+
+private extension EnvironmentValues {
+    var myMacCardContentAlignment: Alignment {
+        get { self[MyMacCardContentAlignmentKey.self] }
+        set { self[MyMacCardContentAlignmentKey.self] = newValue }
+    }
+}
+
+private extension View {
+    func myMacCardAlignment(_ alignment: Alignment) -> some View {
+        environment(\.myMacCardContentAlignment, alignment)
     }
 }

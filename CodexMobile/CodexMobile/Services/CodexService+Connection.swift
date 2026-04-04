@@ -226,6 +226,9 @@ extension CodexService {
             SecureStore.deleteValue(for: CodexSecureKeys.lastTrustedMacDeviceId)
             lastTrustedMacDeviceId = nil
         }
+        if normalizedPreviousTrustedMacDeviceId == targetDeviceId {
+            clearPreviousTrustedMacDeviceId()
+        }
 
         if normalizedRelayMacDeviceId == targetDeviceId {
             clearSavedRelaySession()

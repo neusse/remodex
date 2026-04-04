@@ -17,7 +17,9 @@ final class ContentViewModel {
     private(set) var isRunningAutoReconnect = false
     private(set) var isRunningManualReconnect = false
     private(set) var isSwitchingMac = false
+    private(set) var isCancellingMacSwitch = false
     private(set) var switchingMacDeviceId: String?
+    private(set) var macSwitchNotice: String?
     private var shouldCancelManualReconnect = false
     // Test hooks keep reconnect verification fast without changing production retry behavior.
     @ObservationIgnored var reconnectAttemptLimitOverride: Int?
@@ -339,6 +341,11 @@ extension ContentViewModel {
         var lastError: Error?
 
         for attemptIndex in 0...maxAttemptIndex {
+            if Task.isCancelled {
+                codex.connectionRecoveryState = .idle
+                throw CancellationError()
+            }
+
             guard shouldContinue?() ?? true else {
                 codex.connectionRecoveryState = .idle
                 throw CancellationError()
@@ -356,6 +363,8 @@ extension ContentViewModel {
                 codex.connectionRecoveryState = .idle
                 codex.lastErrorMessage = nil
                 codex.shouldAutoReconnectOnForeground = false
+                codex.clearPreviousTrustedMacDeviceId()
+                macSwitchNotice = nil
                 return
             } catch {
                 if isCancellationLikeError(error) {
@@ -395,6 +404,10 @@ extension ContentViewModel {
                     autoReconnectBackoffNanoseconds[attemptIndex],
                     continueWhile: shouldContinue
                 )
+                if Task.isCancelled {
+                    codex.connectionRecoveryState = .idle
+                    throw CancellationError()
+                }
             }
         }
 
@@ -550,8 +563,11 @@ extension ContentViewModel {
         }
 
         isSwitchingMac = true
+        isCancellingMacSwitch = false
         switchingMacDeviceId = normalizedTargetMacDeviceId
+        macSwitchNotice = nil
         defer {
+            isCancellingMacSwitch = false
             switchingMacDeviceId = nil
             isSwitchingMac = false
         }
@@ -586,7 +602,20 @@ extension ContentViewModel {
             )
             codex.setCurrentTrustedMacDeviceId(normalizedTargetMacDeviceId)
             endMacSwitchContext(codex: codex)
+        } catch is CancellationError {
+            await finalizeCancelledMacSwitch(
+                previousCurrentTrustedMacDeviceId: previousCurrentTrustedMacDeviceId,
+                codex: codex
+            )
+            throw CancellationError()
         } catch {
+            if isCancellingMacSwitch {
+                await finalizeCancelledMacSwitch(
+                    previousCurrentTrustedMacDeviceId: previousCurrentTrustedMacDeviceId,
+                    codex: codex
+                )
+                throw CancellationError()
+            }
             restoreRelaySessionSnapshot(previousRelaySessionSnapshot, to: codex)
             codex.setCurrentTrustedMacDeviceId(previousCurrentTrustedMacDeviceId)
             codex.macScopedContextOverrideDeviceId = previousCurrentTrustedMacDeviceId
@@ -609,8 +638,11 @@ extension ContentViewModel {
         }
 
         isSwitchingMac = true
+        isCancellingMacSwitch = false
         switchingMacDeviceId = pairingPayload.macDeviceId
+        macSwitchNotice = nil
         defer {
+            isCancellingMacSwitch = false
             switchingMacDeviceId = nil
             isSwitchingMac = false
         }
@@ -636,7 +668,20 @@ extension ContentViewModel {
                 performAutoRetry: true
             )
             endMacSwitchContext(codex: codex)
+        } catch is CancellationError {
+            await finalizeCancelledMacSwitch(
+                previousCurrentTrustedMacDeviceId: previousCurrentTrustedMacDeviceId,
+                codex: codex
+            )
+            throw CancellationError()
         } catch {
+            if isCancellingMacSwitch {
+                await finalizeCancelledMacSwitch(
+                    previousCurrentTrustedMacDeviceId: previousCurrentTrustedMacDeviceId,
+                    codex: codex
+                )
+                throw CancellationError()
+            }
             codex.setCurrentTrustedMacDeviceId(previousCurrentTrustedMacDeviceId)
             restoreRelaySessionSnapshot(previousRelaySessionSnapshot, to: codex)
             codex.macScopedContextOverrideDeviceId = previousCurrentTrustedMacDeviceId
@@ -650,6 +695,20 @@ extension ContentViewModel {
                 codex.lastErrorMessage = previousErrorMessage
             }
             throw error
+        }
+    }
+
+    func requestMacSwitchCancellation(codex: CodexService) async {
+        guard isSwitchingMac else {
+            return
+        }
+
+        isCancellingMacSwitch = true
+        codex.shouldAutoReconnectOnForeground = false
+        codex.connectionRecoveryState = .idle
+        codex.cancelTrustedSessionResolve()
+        if codex.isConnecting || codex.isConnected || codex.isInitialized {
+            await codex.disconnect(preserveReconnectIntent: false)
         }
     }
 
@@ -732,6 +791,25 @@ extension ContentViewModel {
         }
 
         try await codex.interruptAllRunningTurnsBeforeMacSwitch()
+    }
+
+    private func finalizeCancelledMacSwitch(
+        previousCurrentTrustedMacDeviceId: String?,
+        codex: CodexService
+    ) async {
+        codex.lastErrorMessage = nil
+        codex.connectionRecoveryState = .idle
+        codex.shouldAutoReconnectOnForeground = false
+        codex.cancelTrustedSessionResolve()
+        await codex.disconnect(preserveReconnectIntent: false)
+        codex.setCurrentTrustedMacDeviceId(nil)
+        if let previousCurrentTrustedMacDeviceId {
+            codex.setPreviousTrustedMacDeviceId(previousCurrentTrustedMacDeviceId)
+        }
+        codex.clearSavedRelaySession()
+        codex.clearInMemoryMacScopedState()
+        endMacSwitchContext(codex: codex)
+        macSwitchNotice = "Switch cancelled. Choose a Mac to reconnect."
     }
 
     private func captureRelaySessionSnapshot(from codex: CodexService) -> RelaySessionSnapshot {

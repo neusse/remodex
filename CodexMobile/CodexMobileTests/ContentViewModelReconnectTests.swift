@@ -579,6 +579,81 @@ final class ContentViewModelReconnectTests: XCTestCase {
         XCTAssertEqual(events.prefix(2), ["turn/interrupt", "connect"])
     }
 
+    func testCancelledSwitchClearsCurrentSelectionMarksPreviousAndRemovesRelaySession() async {
+        let service = makeService()
+        let viewModel = ContentViewModel()
+        let currentMacDeviceID = "mac-current-\(UUID().uuidString)"
+        let targetMacDeviceID = "mac-target-\(UUID().uuidString)"
+        let relayURL = "wss://relay.local/relay"
+
+        service.trustedMacRegistry.records[currentMacDeviceID] = CodexTrustedMacRecord(
+            macDeviceId: currentMacDeviceID,
+            macIdentityPublicKey: Data(repeating: 35, count: 32).base64EncodedString(),
+            lastPairedAt: Date(),
+            relayURL: relayURL
+        )
+        service.trustedMacRegistry.records[targetMacDeviceID] = CodexTrustedMacRecord(
+            macDeviceId: targetMacDeviceID,
+            macIdentityPublicKey: Data(repeating: 36, count: 32).base64EncodedString(),
+            lastPairedAt: Date(),
+            relayURL: relayURL
+        )
+        service.setCurrentTrustedMacDeviceId(currentMacDeviceID)
+        service.relaySessionId = "saved-session"
+        service.relayUrl = relayURL
+        service.relayMacDeviceId = currentMacDeviceID
+        viewModel.connectOverride = { _, _ in
+            while !Task.isCancelled {
+                await Task.yield()
+            }
+            throw CancellationError()
+        }
+
+        let switchTask = Task {
+            try await viewModel.switchToTrustedMac(deviceId: targetMacDeviceID, codex: service)
+        }
+
+        while !viewModel.isSwitchingMac {
+            await Task.yield()
+        }
+
+        switchTask.cancel()
+        await viewModel.requestMacSwitchCancellation(codex: service)
+
+        do {
+            try await switchTask.value
+            XCTFail("Expected cancelled switch to terminate with cancellation.")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
+
+        XCTAssertNil(service.normalizedCurrentTrustedMacDeviceId)
+        XCTAssertEqual(service.normalizedPreviousTrustedMacDeviceId, currentMacDeviceID)
+        XCTAssertNil(service.normalizedRelaySessionId)
+        XCTAssertNil(service.normalizedRelayMacDeviceId)
+        XCTAssertEqual(viewModel.macSwitchNotice, "Switch cancelled. Choose a Mac to reconnect.")
+        XCTAssertFalse(viewModel.isSwitchingMac)
+    }
+
+    func testSuccessfulReconnectClearsPreviousMarkerAndSwitchNotice() async {
+        let service = makeService()
+        let viewModel = ContentViewModel()
+
+        service.setPreviousTrustedMacDeviceId("mac-previous")
+        viewModel.connectOverride = { _, _ in }
+
+        try? await viewModel.connectWithAutoRecovery(
+            codex: service,
+            serverURL: "wss://relay.local/relay/session",
+            performAutoRetry: false
+        )
+
+        XCTAssertNil(service.normalizedPreviousTrustedMacDeviceId)
+        XCTAssertNil(viewModel.macSwitchNotice)
+    }
+
     private func makeService() -> CodexService {
         let suiteName = "ContentViewModelReconnectTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName) ?? .standard

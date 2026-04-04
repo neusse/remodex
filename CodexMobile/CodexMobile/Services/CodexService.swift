@@ -458,6 +458,7 @@ final class CodexService {
     var trustedMacRegistry: CodexTrustedMacRegistry
     var currentTrustedMacDeviceId: String?
     var lastTrustedMacDeviceId: String?
+    var previousTrustedMacDeviceId: String?
     @ObservationIgnored var macScopedContextOverrideDeviceId: String?
     @ObservationIgnored var suspendAutomaticMacScopedPersistence = false
     @ObservationIgnored var isApplyingMacScopedState = false
@@ -693,6 +694,12 @@ final class CodexService {
         return trustedMacRegistry.records[normalizedCurrentTrustedMacDeviceId]
     }
 
+    var normalizedPreviousTrustedMacDeviceId: String? {
+        previousTrustedMacDeviceId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .codexNilIfEmpty
+    }
+
     func trustedMacRecord(for deviceId: String?) -> CodexTrustedMacRecord? {
         guard let normalizedDeviceId = deviceId?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -732,6 +739,26 @@ final class CodexService {
         return .connected
     }
 
+    var connectionPhaseDisplayLabel: String {
+        switch connectionPhase {
+        case .offline:
+            return "Offline"
+        case .connecting:
+            return "Connecting"
+        case .loadingChats:
+            return "Loading chats"
+        case .syncing:
+            return "Syncing"
+        case .connected:
+            return "Connected"
+        }
+    }
+
+    var secureConnectionDisplayLabel: String? {
+        let label = secureConnectionState.statusLabel
+        return label.isEmpty || secureConnectionState == .notPaired ? nil : label
+    }
+
     func setCurrentTrustedMacDeviceId(_ deviceId: String?) {
         let normalizedDeviceId = deviceId?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -742,6 +769,16 @@ final class CodexService {
         } else {
             SecureStore.deleteValue(for: CodexSecureKeys.currentTrustedMacDeviceId)
         }
+    }
+
+    func setPreviousTrustedMacDeviceId(_ deviceId: String?) {
+        previousTrustedMacDeviceId = deviceId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .codexNilIfEmpty
+    }
+
+    func clearPreviousTrustedMacDeviceId() {
+        previousTrustedMacDeviceId = nil
     }
 
     func migrateCurrentTrustedMacDeviceIdIfNeeded() {
