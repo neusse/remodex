@@ -50,7 +50,67 @@ interface UpdateInfo {
   body: string | null;
 }
 
-type View = "dashboard" | "network" | "logs" | "settings" | "debug";
+interface BundlePackageMetadata {
+  name: string | null;
+  version: string | null;
+}
+
+interface BundleComponentManifest {
+  package: BundlePackageMetadata | null;
+  hash: string;
+}
+
+interface BundleManifest {
+  schemaVersion: number;
+  generatedAt: string;
+  relay: BundleComponentManifest;
+  bridge: BundleComponentManifest;
+}
+
+interface RuntimeBundleStatus {
+  bundled_manifest: BundleManifest | null;
+  runtime_manifest: BundleManifest | null;
+  runtime_current: boolean;
+  refresh_available: boolean;
+  refresh_deferred: boolean;
+  bundled_path: string;
+  runtime_path: string;
+  message: string;
+}
+
+interface DiagnosticAction {
+  kind: string;
+  label: string;
+  value: string | null;
+}
+
+interface DiagnosticCheck {
+  id: string;
+  title: string;
+  status: "pass" | "warn" | "fail" | string;
+  detail: string;
+  action: DiagnosticAction | null;
+}
+
+interface SetupPreset {
+  id: string;
+  title: string;
+  detail: string;
+  status: "pass" | "warn" | "fail" | string;
+  action: DiagnosticAction | null;
+}
+
+interface DiagnosticsSnapshot {
+  generated_at: string;
+  summary: string;
+  checks: DiagnosticCheck[];
+  presets: SetupPreset[];
+  recommended_actions: DiagnosticAction[];
+  runtime: RuntimeBundleStatus;
+  debug: DebugInfo;
+}
+
+type View = "dashboard" | "network" | "logs" | "settings" | "diagnostics";
 
 interface AppConfig {
   relay_mode: string;
@@ -134,7 +194,8 @@ function App() {
   const [starting, setStarting] = useState(false);
   const [tauriReady, setTauriReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [phoneConnected, setPhoneConnected] = useState(false);
   const [firstRun, setFirstRun] = useState(false);
   const [firewallWarning, setFirewallWarning] = useState<{ ip: string; port: number; message: string } | null>(null);
@@ -169,6 +230,24 @@ function App() {
   const addLog = useCallback((entry: LogEntry) => {
     setLogs((prev) => [...prev.slice(-499), entry]);
   }, []);
+
+  const refreshStatus = useCallback(async () => {
+    if (!tauriReady) return;
+    try {
+      const s = await invoke<AppStatus>("get_status");
+      setStatus(s);
+      setAppState(s.state);
+      setPhoneConnected(s.phone_connected);
+      if (s.pairing_payload) {
+        setPairingPayload(s.pairing_payload);
+      }
+      if (s.pairing_code) {
+        setPairingCode(s.pairing_code);
+      }
+    } catch {
+      return;
+    }
+  }, [tauriReady]);
 
   // Wait for Tauri to be ready before registering listeners
   useEffect(() => {
@@ -366,6 +445,7 @@ function App() {
       await win.show().catch(() => {});
       await win.setFocus().catch(() => {});
       setView("dashboard");
+      await refreshStatus();
     }).then((fn) => {
       unlistenFn = fn;
     });
@@ -373,7 +453,7 @@ function App() {
     return () => {
       unlistenFn?.();
     };
-  }, [tauriReady]);
+  }, [tauriReady, refreshStatus]);
 
   // Scroll logs to bottom
   useEffect(() => {
@@ -385,32 +465,16 @@ function App() {
     const canvas = document.getElementById("qr-canvas") as HTMLCanvasElement | null;
     if (!canvas) return;
     QRCode.toCanvas(canvas, pairingPayload, { width: 200, margin: 1 }).catch(() => {});
-  }, [pairingPayload]);
+  }, [pairingPayload, view]);
 
   // Poll status periodically
   useEffect(() => {
     if (!tauriReady) return;
 
-    const poll = async () => {
-      try {
-        const s = await invoke<AppStatus>("get_status");
-        setStatus(s);
-        setAppState(s.state);
-        setPhoneConnected(s.phone_connected);
-        if (s.pairing_payload) {
-          setPairingPayload(s.pairing_payload);
-        }
-        if (s.pairing_code) {
-          setPairingCode(s.pairing_code);
-        }
-      } catch {
-        return;
-      }
-    };
-    poll();
-    const interval = setInterval(poll, 3000);
+    refreshStatus();
+    const interval = setInterval(refreshStatus, 3000);
     return () => clearInterval(interval);
-  }, [tauriReady]);
+  }, [tauriReady, refreshStatus]);
 
   const handleStartAll = async () => {
     if (!tauriReady) return;
@@ -531,14 +595,57 @@ function App() {
     }
   };
 
-  const handleDebug = async () => {
+  const handleDiagnostics = async () => {
+    if (!tauriReady) return;
+    setDiagnosticsLoading(true);
     try {
-      const info = await invoke<DebugInfo>("debug_paths");
-      console.log("[RemodexHost] Debug info:", info);
-      setDebugInfo(info);
-      setView("debug");
+      const snapshot = await invoke<DiagnosticsSnapshot>("get_diagnostics");
+      console.log("[RemodexHost] Diagnostics:", snapshot);
+      setDiagnostics(snapshot);
+      setView("diagnostics");
     } catch (e) {
-      logError(`Debug failed: ${e}`);
+      logError(`Diagnostics failed: ${e}`);
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
+
+  const reloadDiagnostics = async () => {
+    if (!tauriReady) return;
+    try {
+      const snapshot = await invoke<DiagnosticsSnapshot>("get_diagnostics");
+      setDiagnostics(snapshot);
+    } catch (e) {
+      logError(`Diagnostics refresh failed: ${e}`);
+    }
+  };
+
+  const handleDiagnosticAction = async (action: DiagnosticAction | null) => {
+    if (!action || !tauriReady) return;
+    try {
+      if (action.kind === "refreshRuntime") {
+        await invoke("refresh_bundled_runtime");
+      } else if (action.kind === "selectNetwork" && action.value) {
+        await invoke("select_network", { ip: action.value });
+        setStatus((p) => ({ ...p, network: action.value || "" }));
+        setSettings((p) => ({ ...p, selected_ip: action.value || "" }));
+      } else if (action.kind === "applyPort" && action.value) {
+        const port = parseInt(action.value) || 9000;
+        const next = { ...settings, relay_port: port };
+        await invoke("save_config_cmd", { config: next });
+        setSettings(next);
+        setSettingsPort(String(port));
+      } else if (action.kind === "checkUpdate") {
+        await handleCheckForUpdate();
+      } else if (action.kind === "openSettings") {
+        invoke<AppConfig>("get_config").then(setSettings).catch(() => {});
+        setSettingsPort(String(settings.relay_port));
+        setView("settings");
+        return;
+      }
+      await reloadDiagnostics();
+    } catch (e) {
+      logError(`Action failed: ${e}`);
     }
   };
 
@@ -621,15 +728,26 @@ function App() {
   };
 
   const isStopped = appState === "stopped" || appState === "error";
+  const viewBodyStyle = {
+    flex: 1,
+    minHeight: 0,
+    overflowY: "auto" as const,
+    overflowX: "hidden" as const,
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: "10px",
+    paddingRight: "2px",
+  };
 
   return (
     <div
       style={{
         background: "var(--bg-primary)",
         height: "100vh",
+        minHeight: 0,
         display: "flex",
         flexDirection: "column",
-        padding: "14px",
+        padding: "12px 14px 10px",
         gap: "10px",
       }}
     >
@@ -759,6 +877,7 @@ function App() {
         </div>
       )}
 
+      <div style={viewBodyStyle}>
       {/* Onboarding / First-run */}
       {firstRun && (
         <div
@@ -808,6 +927,7 @@ function App() {
               border: "1px solid var(--border-color)",
               padding: "8px 12px",
               display: "flex",
+              flexWrap: "wrap",
               gap: "8px",
             }}
           >
@@ -823,9 +943,9 @@ function App() {
               }}
             />
             <ModeBtn
-              label="Remote"
+              label="Custom Relay"
               active={status.relay_mode === "remote"}
-              desc="Placeholder"
+              desc="wss://"
               onClick={async () => {
                 if (status.relay_mode !== "remote") {
                   await invoke("set_relay_mode", { mode: "remote" });
@@ -847,7 +967,7 @@ function App() {
                 color: "#FFB020",
               }}
             >
-              Remote relay is prepared but not active. Subscription handled by mobile app later.
+              Use a relay URL you control. Public relays should use secure wss://.
             </div>
           )}
 
@@ -924,7 +1044,7 @@ function App() {
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              gap: "8px",
+              gap: "7px",
             }}
           >
             <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)" }}>
@@ -934,18 +1054,23 @@ function App() {
               <div
                 style={{
                   background: "#FFFFFF",
-                  padding: "8px",
+                  padding: "7px",
                   borderRadius: "6px",
                   lineHeight: 0,
                 }}
               >
-                <canvas id="qr-canvas" width="200" height="200" style={{ display: "block" }}></canvas>
+                <canvas
+                  id="qr-canvas"
+                  width="200"
+                  height="200"
+                  style={{ display: "block", width: "min(200px, 52vw)", height: "auto", maxWidth: "100%" }}
+                ></canvas>
               </div>
             ) : (
               <div
                 style={{
-                  width: "200px",
-                  height: "200px",
+                  width: "min(200px, 52vw)",
+                  aspectRatio: "1 / 1",
                   background: "var(--bg-primary)",
                   borderRadius: "6px",
                   display: "flex",
@@ -1016,7 +1141,7 @@ function App() {
           </div>
 
           {/* Actions */}
-          <div style={{ display: "flex", gap: "6px" }}>
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
             {isStopped ? (
               <ActionBtn label={starting ? "Starting..." : "Start All"} color="#35C759" onClick={handleStartAll} disabled={starting || !tauriReady} />
             ) : (
@@ -1350,7 +1475,7 @@ function App() {
           {/* Remote Relay URL */}
           <div style={{ marginBottom: "10px" }}>
             <label style={{ fontSize: "11px", color: "var(--text-secondary)", display: "block", marginBottom: "4px" }}>
-              Remote Relay URL (placeholder)
+              Custom Relay URL
             </label>
             <input
               type="text"
@@ -1466,7 +1591,7 @@ function App() {
         </div>
       )}
 
-      {view === "debug" && debugInfo && (
+      {view === "diagnostics" && (
         <div
           style={{
             flex: 1,
@@ -1475,37 +1600,90 @@ function App() {
             border: "1px solid var(--border-color)",
             padding: "12px",
             overflow: "auto",
-            fontFamily: "monospace",
             fontSize: "11px",
-            lineHeight: "1.7",
+            lineHeight: "1.45",
           }}
         >
-          <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)", marginBottom: "8px" }}>
-            Diagnostics
-          </div>
-          {[
-            ["CWD", debugInfo.cwd],
-            ["Repo root", debugInfo.repo_root],
-            ["Node.js", debugInfo.node_version],
-            ["Relay dir", debugInfo.relay_dir],
-            ["  server.js exists", String(debugInfo.relay_server_exists)],
-            ["Bridge dir", debugInfo.bridge_dir],
-            ["  remodex.js exists", String(debugInfo.bridge_bin_exists)],
-            ["Config path", debugInfo.config_path],
-            ["Config exists", String(debugInfo.config_exists)],
-          ].map(([label, value]) => (
-            <div key={label} style={{ display: "flex", gap: "8px", color: "var(--text-secondary)" }}>
-              <span style={{ color: "var(--text-primary)", minWidth: "160px" }}>{label}</span>
-              <span style={{
-                color: value?.startsWith("false") || value?.startsWith("unknown")
-                  ? "#FF5C5C" : value?.startsWith("true") ? "#35C759" : "var(--text-secondary)"
-              }}>
-                {value}
-              </span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", gap: "8px" }}>
+            <div>
+              <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)" }}>
+                Diagnostics
+              </div>
+              <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginTop: "2px" }}>
+                {diagnostics?.summary || (diagnosticsLoading ? "Checking setup..." : "Run checks to inspect local setup.")}
+              </div>
             </div>
-          ))}
+            <ActionBtn
+              label={diagnosticsLoading ? "Checking..." : "Refresh"}
+              color="#4F8CFF"
+              onClick={handleDiagnostics}
+              disabled={diagnosticsLoading || !tauriReady}
+              compact
+            />
+          </div>
+
+          {diagnostics && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "6px", marginBottom: "10px" }}>
+                {diagnostics.presets.map((preset) => (
+                  <DiagnosticRow
+                    key={preset.id}
+                    title={preset.title}
+                    status={preset.status}
+                    detail={preset.detail}
+                    action={preset.action}
+                    onAction={handleDiagnosticAction}
+                  />
+                ))}
+              </div>
+
+              <div style={{ fontSize: "10px", fontWeight: 700, color: "var(--text-secondary)", margin: "10px 0 6px" }}>
+                Setup checks
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "5px" }}>
+                {diagnostics.checks.map((check) => (
+                  <DiagnosticRow
+                    key={check.id}
+                    title={check.title}
+                    status={check.status}
+                    detail={check.detail}
+                    action={check.action}
+                    onAction={handleDiagnosticAction}
+                  />
+                ))}
+              </div>
+
+              <div style={{ fontSize: "10px", fontWeight: 700, color: "var(--text-secondary)", margin: "12px 0 6px" }}>
+                Bundle status
+              </div>
+              <div style={{ background: "var(--bg-primary)", border: "1px solid var(--border-color)", borderRadius: "6px", padding: "8px", display: "grid", gap: "4px" }}>
+                <DiagnosticFact label="Runtime" value={diagnostics.runtime.runtime_current ? "current" : diagnostics.runtime.refresh_deferred ? "restart needed" : "refresh available"} />
+                <DiagnosticFact label="Bridge bundle" value={`${diagnostics.runtime.bundled_manifest?.bridge.package?.version || "unknown"} / ${(diagnostics.runtime.bundled_manifest?.bridge.hash || "").slice(0, 12) || "no hash"}`} />
+                <DiagnosticFact label="Bridge runtime" value={`${diagnostics.runtime.runtime_manifest?.bridge.package?.version || "missing"} / ${(diagnostics.runtime.runtime_manifest?.bridge.hash || "").slice(0, 12) || "no hash"}`} />
+                <DiagnosticFact label="Relay bundle" value={(diagnostics.runtime.bundled_manifest?.relay.hash || "").slice(0, 12) || "no hash"} />
+                <DiagnosticFact label="Relay runtime" value={(diagnostics.runtime.runtime_manifest?.relay.hash || "").slice(0, 12) || "no hash"} />
+              </div>
+
+              <details style={{ marginTop: "10px" }}>
+                <summary style={{ cursor: "pointer", color: "var(--text-secondary)", fontSize: "10px", fontWeight: 700 }}>
+                  Advanced details
+                </summary>
+                <div style={{ marginTop: "6px", fontFamily: "ui-monospace, Consolas, monospace", fontSize: "10px", color: "var(--text-secondary)", display: "grid", gap: "3px" }}>
+                  <DiagnosticFact label="CWD" value={diagnostics.debug.cwd} />
+                  <DiagnosticFact label="Repo root" value={diagnostics.debug.repo_root} />
+                  <DiagnosticFact label="Node.js" value={diagnostics.debug.node_version} />
+                  <DiagnosticFact label="Relay dir" value={diagnostics.debug.relay_dir} />
+                  <DiagnosticFact label="Bridge dir" value={diagnostics.debug.bridge_dir} />
+                  <DiagnosticFact label="Config" value={diagnostics.debug.config_path} />
+                  <DiagnosticFact label="Generated" value={diagnostics.generated_at} />
+                </div>
+              </details>
+            </>
+          )}
         </div>
       )}
+
+      </div>
 
       {/* Bottom tabs */}
       <div style={{ display: "flex", gap: "2px", background: "var(--bg-surface)", borderRadius: "6px", padding: "2px" }}>
@@ -1517,8 +1695,75 @@ function App() {
           setSettingsPort(String(settings.relay_port));
           setView("settings");
         }} />
-        <ViewTab label="Debug" active={view === "debug"} onClick={handleDebug} />
+        <ViewTab label="Diagnostics" active={view === "diagnostics"} onClick={handleDiagnostics} />
       </div>
+    </div>
+  );
+}
+
+function DiagnosticRow({
+  title,
+  status,
+  detail,
+  action,
+  onAction,
+}: {
+  title: string;
+  status: string;
+  detail: string;
+  action: DiagnosticAction | null;
+  onAction: (action: DiagnosticAction | null) => void;
+}) {
+  const color = status === "pass" ? "#35C759" : status === "fail" ? "#FF5C5C" : "#FFB020";
+  const label = status === "pass" ? "OK" : status === "fail" ? "Fix" : "Check";
+  return (
+    <div
+      style={{
+        background: "var(--bg-primary)",
+        border: `1px solid ${color}35`,
+        borderRadius: "6px",
+        padding: "8px",
+        display: "grid",
+        gridTemplateColumns: action ? "1fr auto" : "1fr",
+        gap: "8px",
+        alignItems: "center",
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "3px" }}>
+          <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: color, flexShrink: 0 }} />
+          <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-primary)" }}>{title}</span>
+          <span style={{ fontSize: "9px", color, fontWeight: 700, textTransform: "uppercase" }}>{label}</span>
+        </div>
+        <div style={{ color: "var(--text-secondary)", fontSize: "10px", wordBreak: "break-word" }}>{detail}</div>
+      </div>
+      {action && (
+        <button
+          onClick={() => onAction(action)}
+          style={{
+            border: "none",
+            borderRadius: "4px",
+            background: color,
+            color: "#fff",
+            cursor: "pointer",
+            fontSize: "10px",
+            fontWeight: 700,
+            padding: "5px 7px",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {action.label}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DiagnosticFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "96px 1fr", gap: "8px", minWidth: 0 }}>
+      <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{label}</span>
+      <span style={{ color: "var(--text-secondary)", wordBreak: "break-all" }}>{value}</span>
     </div>
   );
 }

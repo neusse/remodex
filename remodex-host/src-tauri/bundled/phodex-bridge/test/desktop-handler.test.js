@@ -292,54 +292,6 @@ test("desktop/continueOnDesktop bounces Codex via deep links on Windows", async 
   }]);
 });
 
-test("desktop/continueOnDesktop treats WSL as a Windows desktop host", async () => {
-  const executorCalls = [];
-  const responses = [];
-
-  handleDesktopRequest(JSON.stringify({
-    id: "request-wsl-1",
-    method: "desktop/continueOnDesktop",
-    params: {
-      threadId: "thread-wsl-123",
-    },
-  }), (response) => {
-    responses.push(JSON.parse(response));
-  }, {
-    platform: "linux",
-    env: {
-      WSL_DISTRO_NAME: "Ubuntu",
-      ComSpec: "cmd.exe",
-    },
-    executor: async (...args) => {
-      executorCalls.push(args);
-      return { stdout: "", stderr: "" };
-    },
-    sleepFn: async () => {},
-    threadMaterializeWaitMs: 0,
-  });
-
-  await new Promise((resolve) => setTimeout(resolve, 0));
-
-  assert.equal(executorCalls.length, 2);
-  assert.equal(executorCalls[0][0], "cmd.exe");
-  assert.deepEqual(executorCalls[0][1], [
-    "/d",
-    "/c",
-    "start",
-    "",
-    "codex://settings",
-  ]);
-  assert.equal(executorCalls[1][0], "cmd.exe");
-  assert.deepEqual(executorCalls[1][1], [
-    "/d",
-    "/c",
-    "start",
-    "",
-    "codex://threads/thread-wsl-123",
-  ]);
-  assert.equal(responses[0].result?.success, true);
-});
-
 test("desktop/continueOnDesktop rejects unsafe thread ids before opening Windows links", async () => {
   const executorCalls = [];
   const responses = [];

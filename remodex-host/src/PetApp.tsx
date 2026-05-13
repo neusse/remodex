@@ -5,6 +5,9 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { PetSprite, loadPetManifest, type PetManifest } from "./Pet";
 
+const PET_WINDOW_SIZE = 80;
+const PET_VISIBLE_SIZE = 72;
+
 export function PetApp() {
   const [manifest, setManifest] = useState<PetManifest | null>(null);
   const [appState, setAppState] = useState("stopped");
@@ -12,6 +15,7 @@ export function PetApp() {
 
   const moveRef = useRef({ vx: 0, vy: 0 });
   const userDrag = useRef({ active: false, moved: false, startTime: 0, startMouseX: 0, startMouseY: 0, startWinX: 0, startWinY: 0, lastMouseX: 0 });
+  const hidePopupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { loadPetManifest("/pets/relay/pet.json").then(setManifest).catch(console.error); }, []);
 
@@ -87,7 +91,7 @@ export function PetApp() {
       if (moveRef.current.vx === 0 && moveRef.current.vy === 0) return;
       const pos = await invoke<[number, number] | null>("get_pet_window_position").catch(() => null);
       if (!pos || stopped) return;
-      const mx = window.screen.availWidth - 80, my = window.screen.availHeight - 80;
+      const mx = window.screen.availWidth - PET_WINDOW_SIZE, my = window.screen.availHeight - PET_WINDOW_SIZE;
       let nx = pos[0] + moveRef.current.vx, ny = pos[1] + moveRef.current.vy;
       if (nx <= 0) { nx = 0; moveRef.current.vx = Math.abs(moveRef.current.vx); setDirection("right"); }
       if (nx >= mx) { nx = mx; moveRef.current.vx = -Math.abs(moveRef.current.vx); setDirection("left"); }
@@ -103,12 +107,31 @@ export function PetApp() {
 
   if (!manifest) return null;
 
+  const petScale = Math.min(
+    0.8,
+    PET_VISIBLE_SIZE / Math.max(manifest.spritesheet.cellWidth, manifest.spritesheet.cellHeight)
+  );
+
   return (
-    <div onDoubleClick={() => { invoke("show_main_window").catch(() => {}); }}
+    <div
+      onMouseEnter={() => {
+        if (hidePopupTimer.current) {
+          clearTimeout(hidePopupTimer.current);
+          hidePopupTimer.current = null;
+        }
+        invoke("show_pet_popup").catch(() => {});
+      }}
+      onMouseLeave={() => {
+        hidePopupTimer.current = setTimeout(() => {
+          invoke("hide_pet_popup").catch(() => {});
+          hidePopupTimer.current = null;
+        }, 160);
+      }}
+      onDoubleClick={() => { invoke("show_main_window").catch(() => {}); }}
       style={{ width: "100%", height: "100%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <PetSprite manifest={manifest} basePath="/pets/relay" appState={appState}
         animationOverride={direction === "right" ? "running-right" : direction === "left" ? "running-left" : undefined}
-        mirrorX={direction === "right"} scale={0.8} />
+        mirrorX={direction === "right"} scale={petScale} />
     </div>
   );
 }

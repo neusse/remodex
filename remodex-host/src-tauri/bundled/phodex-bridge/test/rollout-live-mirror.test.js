@@ -1,4 +1,4 @@
-﻿// FILE: rollout-live-mirror.test.js
+// FILE: rollout-live-mirror.test.js
 // Purpose: Verifies desktop-origin rollout replay/live tailing emits thinking and tool-call notifications for iPhone only.
 // Layer: Unit test
 // Exports: node:test suite

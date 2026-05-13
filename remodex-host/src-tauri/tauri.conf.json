@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Remodex Host",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "identifier": "com.remodex.host",
   "build": {
     "frontendDist": "../dist",
@@ -47,7 +47,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYwNEE4RjU3OTZERDc1NzMKUldSemRkMldWNDlLWUJSVUhpZHlvWDBSaWlzSURiM3l2dXRBRHhueVlHRURMQXpTaTkrY2xDU2kK",
       "endpoints": [
-        "https://github.com/Stivy-01/remodex/releases/download/Remodex-Host-Beta/latest.json"
+        "https://github.com/Stivy-01/remodex/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

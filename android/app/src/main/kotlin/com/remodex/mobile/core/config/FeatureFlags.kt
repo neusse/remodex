@@ -8,4 +8,7 @@ object FeatureFlags {
 
     val betaEngagementEnabled: Boolean
         get() = BuildConfig.BETA_ENABLED && BuildConfig.BETA_API_BASE_URL.isNotBlank()
+
+    val nativeTerminalSpikeEnabled: Boolean
+        get() = BuildConfig.BETA_TERMINAL_ENABLED
 }

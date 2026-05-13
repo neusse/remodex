@@ -235,6 +235,17 @@ fun SidebarDrawerContent(
                     } else {
                         null
                     },
+                onTerminal =
+                    if (FeatureFlags.nativeTerminalSpikeEnabled) {
+                        {
+                            drawerScope.launch {
+                                closeDrawer()
+                                navController.navigate(AppRoutes.TerminalSpike)
+                            }
+                        }
+                    } else {
+                        null
+                    },
                 onScan = {
                     drawerScope.launch {
                         closeDrawer()
@@ -330,6 +341,7 @@ private fun SidebarBottomBar(
     status: String,
     onSettings: () -> Unit,
     onTesterHq: (() -> Unit)?,
+    onTerminal: (() -> Unit)?,
     onScan: () -> Unit,
     trophyModifier: Modifier = Modifier,
     colors: SidebarColorPalette,
@@ -360,6 +372,14 @@ private fun SidebarBottomBar(
                     onClick = onTesterHq,
                     colors = colors,
                     modifier = trophyModifier,
+                )
+            }
+            if (onTerminal != null) {
+                SidebarFooterIcon(
+                    icon = LucideR.drawable.lucide_ic_square_terminal,
+                    contentDescription = "Terminal",
+                    onClick = onTerminal,
+                    colors = colors,
                 )
             }
             SidebarFooterIcon(

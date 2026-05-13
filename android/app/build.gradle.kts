@@ -30,6 +30,11 @@ val betaApiKey = betaConfigValue("BETA_API_KEY")
 val betaEnabled =
     betaConfigValue("BETA_ENABLED").equals("true", ignoreCase = true) &&
         betaApiBaseUrl.isNotBlank()
+val betaTerminalEnabled =
+    betaConfigValue("BETA_TERMINAL_ENABLED").equals("true", ignoreCase = true)
+val terminalSpikeHost = betaConfigValue("TERMINAL_SPIKE_HOST")
+val terminalSpikePort = betaConfigValue("TERMINAL_SPIKE_PORT").toIntOrNull()?.coerceIn(1, 65535) ?: 22
+val terminalSpikeUsername = betaConfigValue("TERMINAL_SPIKE_USERNAME")
 
 android {
     namespace = "com.remodex.mobile"
@@ -40,11 +45,15 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        versionCode = 9
+        versionCode = 10
         versionName = "0.1.3"
         buildConfigField("boolean", "BETA_ENABLED", betaEnabled.toString())
+        buildConfigField("boolean", "BETA_TERMINAL_ENABLED", betaTerminalEnabled.toString())
         buildConfigField("String", "BETA_API_BASE_URL", quotedBuildConfigString(betaApiBaseUrl))
         buildConfigField("String", "BETA_API_KEY", quotedBuildConfigString(betaApiKey))
+        buildConfigField("String", "TERMINAL_SPIKE_HOST", quotedBuildConfigString(terminalSpikeHost))
+        buildConfigField("int", "TERMINAL_SPIKE_PORT", terminalSpikePort.toString())
+        buildConfigField("String", "TERMINAL_SPIKE_USERNAME", quotedBuildConfigString(terminalSpikeUsername))
     }
 
     signingConfigs {
@@ -150,6 +159,9 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.security:security-crypto:1.1.0")
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    implementation("com.termux.termux-app:terminal-view:0.118.0")
+    implementation("com.termux.termux-app:terminal-emulator:0.118.0")
+    implementation("com.hierynomus:sshj:0.39.0")
 
     val camerax = "1.4.1"
     implementation("androidx.camera:camera-core:$camerax")

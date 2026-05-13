@@ -1,5 +1,14 @@
-// copy-bundled.mjs — Copies relay and phodex-bridge source files into src-tauri/bundled/
-import { cpSync, rmSync, existsSync } from "fs";
+// copy-bundled.mjs - Copies relay and phodex-bridge source files into src-tauri/bundled/
+import { createHash } from "crypto";
+import {
+  cpSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -11,30 +20,85 @@ function copyDir(src, dest, excludeDirs = []) {
   cpSync(src, dest, {
     recursive: true,
     filter: (filePath) => {
-      // Exclude paths containing any excluded directory name
       return !excludeDirs.some((dir) => filePath.split(/[/\\]/).includes(dir));
     },
   });
 }
 
+function readPackageMetadata(dir) {
+  const packageJsonPath = join(dir, "package.json");
+  if (!existsSync(packageJsonPath)) return null;
+  const parsed = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+  return {
+    name: typeof parsed.name === "string" ? parsed.name : null,
+    version: typeof parsed.version === "string" ? parsed.version : null,
+  };
+}
+
+function hashDir(dir) {
+  const hash = createHash("sha256");
+  const files = [];
+
+  function walk(current, relative = "") {
+    for (const entry of readdirSync(current).sort()) {
+      const fullPath = join(current, entry);
+      const relativePath = relative ? `${relative}/${entry}` : entry;
+      const stat = statSync(fullPath);
+      if (stat.isDirectory()) {
+        walk(fullPath, relativePath);
+      } else if (stat.isFile()) {
+        files.push({ fullPath, relativePath });
+      }
+    }
+  }
+
+  if (existsSync(dir)) walk(dir);
+
+  for (const file of files.sort((a, b) => a.relativePath.localeCompare(b.relativePath))) {
+    hash.update(file.relativePath);
+    hash.update("\0");
+    hash.update(readFileSync(file.fullPath));
+    hash.update("\0");
+  }
+
+  return hash.digest("hex");
+}
+
 const bundledDir = join(__dirname, "src-tauri", "bundled");
-// Clear existing
 rmSync(bundledDir, { recursive: true, force: true });
 
-// Copy relay sources (exclude node_modules and .git)
 console.log("Copying relay sources...");
 copyDir(
   join(repoRoot, "relay"),
   join(bundledDir, "relay"),
-  ["node_modules", ".git"]
+  ["node_modules", ".git"],
 );
 
-// Copy phodex-bridge sources
 console.log("Copying phodex-bridge sources...");
 copyDir(
   join(repoRoot, "phodex-bridge"),
   join(bundledDir, "phodex-bridge"),
-  ["node_modules", ".git"]
+  ["node_modules", ".git"],
+);
+
+const relayDir = join(bundledDir, "relay");
+const bridgeDir = join(bundledDir, "phodex-bridge");
+const manifest = {
+  schemaVersion: 1,
+  generatedAt: new Date().toISOString(),
+  relay: {
+    package: readPackageMetadata(relayDir),
+    hash: hashDir(relayDir),
+  },
+  bridge: {
+    package: readPackageMetadata(bridgeDir),
+    hash: hashDir(bridgeDir),
+  },
+};
+
+writeFileSync(
+  join(bundledDir, "remodex-bundle.json"),
+  `${JSON.stringify(manifest, null, 2)}\n`,
 );
 
 console.log("Bundled files copied.");

@@ -21,6 +21,7 @@ const DEFAULT_THREAD_MATERIALIZE_WAIT_MS = 4_000;
 const DEFAULT_THREAD_MATERIALIZE_POLL_MS = 250;
 const DEFAULT_WAKE_DISPLAY_DURATION_SECONDS = 30;
 const WINDOWS_BOUNCE_URL = "codex://settings";
+const DESKTOP_THREAD_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 
 function handleDesktopRequest(rawMessage, sendResponse, options = {}) {
   let parsed;
@@ -59,12 +60,12 @@ function handleDesktopRequest(rawMessage, sendResponse, options = {}) {
 }
 
 async function handleDesktopMethod(method, params, options = {}) {
-  const env = options.env || process.env;
-  const fsModule = options.fsModule || fs;
-  const platform = effectiveDesktopPlatform(options.platform || DEFAULT_PLATFORM, env, fsModule);
+  const platform = options.platform || DEFAULT_PLATFORM;
   const bundleId = options.bundleId || DEFAULT_BUNDLE_ID;
   const appPath = options.appPath || DEFAULT_APP_PATH;
   const executor = options.executor || execFileAsync;
+  const env = options.env || process.env;
+  const fsModule = options.fsModule || fs;
   const isAppRunning = options.isAppRunning || null;
   const sleepFn = options.sleepFn || sleep;
   const appBootWaitMs = options.appBootWaitMs ?? DEFAULT_APP_BOOT_WAIT_MS;
@@ -152,8 +153,8 @@ async function continueOnDesktop(
   if (!threadId) {
     throw desktopError("missing_thread_id", "A thread id is required to continue on desktop.");
   }
-  if (!isSafeThreadId(threadId)) {
-    throw desktopError("invalid_thread_id", "The requested thread id is not valid.");
+  if (!isValidDesktopThreadId(threadId)) {
+    throw desktopError("invalid_thread_id", "The requested desktop thread id is not valid.");
   }
 
   const targetUrl = `codex://threads/${threadId}`;
@@ -378,8 +379,9 @@ function resolveThreadId(params) {
   return "";
 }
 
-function isSafeThreadId(threadId) {
-  return /^[A-Za-z0-9._-]+$/.test(threadId);
+// Keeps desktop deep links to a single safe route segment before handing them to OS launchers.
+function isValidDesktopThreadId(threadId) {
+  return typeof threadId === "string" && DESKTOP_THREAD_ID_PATTERN.test(threadId);
 }
 
 function desktopError(errorCode, userMessage, cause = null) {
@@ -390,27 +392,6 @@ function desktopError(errorCode, userMessage, cause = null) {
     error.cause = cause;
   }
   return error;
-}
-
-function effectiveDesktopPlatform(platform, env = process.env, fsModule = fs) {
-  if (platform !== "linux") {
-    return platform;
-  }
-
-  return isWindowsSubsystemForLinux(env, fsModule) ? "win32" : platform;
-}
-
-function isWindowsSubsystemForLinux(env = process.env, fsModule = fs) {
-  if (env?.WSL_DISTRO_NAME || env?.WSL_INTEROP) {
-    return true;
-  }
-
-  try {
-    const version = fsModule.readFileSync("/proc/version", "utf8");
-    return /microsoft|wsl/i.test(version);
-  } catch {
-    return false;
-  }
 }
 
 function isThreadLikelyKnownOnDesktop(threadId, { env, fsModule }) {
@@ -465,25 +446,7 @@ async function openCodexApp({ bundleId, appPath, executor }) {
 }
 
 async function openWindowsDeepLink(targetUrl, { executor, env }) {
-  const systemRoot = typeof env?.SystemRoot === "string" && env.SystemRoot.trim()
-    ? env.SystemRoot.trim()
-    : null;
-
-  if (!systemRoot) {
-    await executor(env?.ComSpec || "cmd.exe", [
-      "/d",
-      "/c",
-      "start",
-      "",
-      targetUrl,
-    ], {
-      timeout: HANDOFF_TIMEOUT_MS,
-      windowsHide: true,
-    });
-    return;
-  }
-
-  await executor(path.join(systemRoot, "System32", "rundll32.exe"), [
+  await executor(env?.SystemRoot ? path.join(env.SystemRoot, "System32", "rundll32.exe") : "rundll32.exe", [
     "url.dll,FileProtocolHandler",
     targetUrl,
   ], {

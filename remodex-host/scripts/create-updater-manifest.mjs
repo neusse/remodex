@@ -7,10 +7,14 @@ const tauriConfigPath = path.join(appRoot, "src-tauri", "tauri.conf.json");
 const tauriConfig = JSON.parse(await readFile(tauriConfigPath, "utf8"));
 
 const version = tauriConfig.version;
-const releaseTag = process.env.REMODEX_HOST_UPDATE_TAG || "Remodex-Host-Beta";
+const releaseTag = process.env.REMODEX_HOST_UPDATE_TAG?.trim();
 const baseUrl =
   process.env.REMODEX_HOST_UPDATE_BASE_URL ||
-  `https://github.com/Stivy-01/remodex/releases/download/${releaseTag}`;
+  (
+    releaseTag
+      ? `https://github.com/Stivy-01/remodex/releases/download/${releaseTag}`
+      : "https://github.com/Stivy-01/remodex/releases/latest/download"
+  );
 
 const bundleRoot = path.join(appRoot, "src-tauri", "target", "release", "bundle");
 const nsisDir = path.join(bundleRoot, "nsis");

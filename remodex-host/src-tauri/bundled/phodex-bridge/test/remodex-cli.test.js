@@ -1,4 +1,4 @@
-﻿// FILE: remodex-cli.test.js
+// FILE: remodex-cli.test.js
 // Purpose: Verifies the public CLI exposes version, service control, and machine-readable status output.
 // Layer: Integration-lite test
 // Exports: node:test suite

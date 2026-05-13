@@ -184,7 +184,7 @@
     {
       "id": "waving",
       "kind": "row-strip",
-      "status": "pending",
+      "status": "complete",
       "prompt_file": "prompts/rows/waving.md",
       "input_images": [
         {
@@ -215,12 +215,23 @@
         "base"
       ],
       "mirror_policy": {},
-      "recording_owner": "parent"
+      "recording_owner": "parent",
+      "source_path": "C:\\Users\\andre\\.codex\\generated_images\\019debd7-bdf3-7fa2-87c6-cc8ea0ed75ad\\ig_075fbb56f89392f80169f6bf18c3948191a3b86040e459b377.png",
+      "source_provenance": "built-in-imagegen",
+      "source_sha256": "191454e1c3fba6688b2fee0595b2c293054463fceb6f7a4d0c8e44d6904d512b",
+      "output_sha256": "191454e1c3fba6688b2fee0595b2c293054463fceb6f7a4d0c8e44d6904d512b",
+      "completed_at": "2026-05-13T21:39:18.306127+00:00",
+      "metadata": {
+        "width": 2048,
+        "height": 768,
+        "mode": "RGB",
+        "format": "PNG"
+      }
     },
     {
       "id": "jumping",
       "kind": "row-strip",
-      "status": "pending",
+      "status": "complete",
       "prompt_file": "prompts/rows/jumping.md",
       "input_images": [
         {
@@ -251,7 +262,18 @@
         "base"
       ],
       "mirror_policy": {},
-      "recording_owner": "parent"
+      "recording_owner": "parent",
+      "source_path": "C:\\Users\\andre\\.codex\\generated_images\\019debdd-f54e-7f91-9901-1df0a3384e3d\\ig_022b1574b1de5c6b0169f6c026c2c08191a81c66f6516486b5.png",
+      "source_provenance": "built-in-imagegen",
+      "source_sha256": "06522004a258b27a3a0d70b3cdad1552e7943355f3b9db2d01d4b592ff215dcd",
+      "output_sha256": "06522004a258b27a3a0d70b3cdad1552e7943355f3b9db2d01d4b592ff215dcd",
+      "completed_at": "2026-05-13T21:40:05.636863+00:00",
+      "metadata": {
+        "width": 2059,
+        "height": 764,
+        "mode": "RGB",
+        "format": "PNG"
+      }
     },
     {
       "id": "failed",
@@ -303,7 +325,7 @@
     {
       "id": "waiting",
       "kind": "row-strip",
-      "status": "pending",
+      "status": "complete",
       "prompt_file": "prompts/rows/waiting.md",
       "input_images": [
         {
@@ -334,7 +356,18 @@
         "base"
       ],
       "mirror_policy": {},
-      "recording_owner": "parent"
+      "recording_owner": "parent",
+      "source_path": "C:\\Users\\andre\\.codex\\generated_images\\019debd8-5547-71b1-a1bd-014b26872edd\\ig_0633af43964a57d40169f6bfbb223881918e79fba46ac3becc.png",
+      "source_provenance": "built-in-imagegen",
+      "source_sha256": "136aa1895eaaf8a865d2d25aed6e477dc0b40548d733503438c33d367da6abc9",
+      "output_sha256": "136aa1895eaaf8a865d2d25aed6e477dc0b40548d733503438c33d367da6abc9",
+      "completed_at": "2026-05-13T21:40:18.576513+00:00",
+      "metadata": {
+        "width": 2172,
+        "height": 724,
+        "mode": "RGB",
+        "format": "PNG"
+      }
     },
     {
       "id": "running",

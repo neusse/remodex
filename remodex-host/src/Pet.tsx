@@ -72,20 +72,20 @@ export function PetSprite({ manifest, basePath, appState, scale = 1, animationOv
   const cols = manifest.spritesheet.columns;
 
   const backgroundPosition = useMemo(() => {
-    const xPx = -(frame * cellW);
-    const yPx = -(animation.row * cellH);
+    const xPx = -(frame * cellW * scale);
+    const yPx = -(animation.row * cellH * scale);
     return `${xPx}px ${yPx}px`;
-  }, [frame, animation.row, cellW, cellH]);
+  }, [frame, animation.row, cellW, cellH, scale]);
 
-  const bgWidth = cols * cellW;
+  const bgWidth = cols * cellW * scale;
 
   return (
     <div
       aria-label={`${manifest.name} pet: ${animationName}`}
       style={{
-        width: cellW,
-        height: cellH,
-        transform: mirrorX ? `scaleX(${-scale}) scaleY(${scale})` : `scale(${scale})`,
+        width: cellW * scale,
+        height: cellH * scale,
+        transform: mirrorX ? "scaleX(-1)" : undefined,
         transformOrigin: "center center",
         backgroundImage: `url("${basePath}/${manifest.spritesheet.file}")`,
         backgroundRepeat: "no-repeat",

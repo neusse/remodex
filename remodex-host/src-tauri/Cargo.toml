@@ -1,6 +1,6 @@
 [package]
 name = "remodex-host"
-version = "0.2.0"
+version = "0.3.0"
 description = "Remodex Host - Local bridge manager desktop app"
 authors = ["Remodex"]
 license = "ISC"

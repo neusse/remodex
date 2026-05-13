@@ -1,4 +1,4 @@
-﻿// FILE: ios-app-compatibility.test.js
+// FILE: ios-app-compatibility.test.js
 // Purpose: Verifies the bridge-side App Store iPhone compatibility policy stays conservative and explicit.
 // Layer: Unit test
 // Exports: node:test suite
