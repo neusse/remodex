@@ -16,7 +16,8 @@ dist-ssr
 src-tauri/bundled/
 
 # Local Tauri manifest churn
-
+src-tauri/Cargo.toml
+src-tauri/Cargo.lock
 
 # Editor directories and files
 .vscode/*
