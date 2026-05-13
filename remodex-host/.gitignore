@@ -17,6 +17,7 @@ src-tauri/bundled/
 
 # Local Tauri manifest churn
 src-tauri/Cargo.toml
+src-tauri/Cargo.lock
 
 # Editor directories and files
 .vscode/*
@@ -28,3 +29,4 @@ src-tauri/Cargo.toml
 *.njsproj
 *.sln
 *.sw?
+*.lock
