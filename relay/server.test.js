@@ -6,7 +6,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { generateKeyPairSync, sign, verify } = require("crypto");
+const { generateKeyPairSync, sign } = require("crypto");
 const WebSocket = require("ws");
 const {
   createRelayServer,
@@ -29,7 +29,29 @@ test("health is minimal by default and detailed only when enabled", async () => 
   assert.equal(detailed.ok, true);
   assert.ok(detailed.relay);
   assert.ok(detailed.push);
+  assert.ok(detailed.runtime);
+  assert.equal(typeof detailed.runtime.eventLoopDelayMs.max, "number");
   assert.equal(detailed.push.enabled, false);
+});
+
+test("detailed health exposes relay pressure counters", async () => {
+  await withServer(async ({ port }) => {
+    const mac = new WebSocket(`ws://127.0.0.1:${port}/relay/session-health`, {
+      headers: { "x-role": "mac" },
+    });
+    await onceOpen(mac);
+
+    const response = await fetch(`http://127.0.0.1:${port}/health`);
+    const body = await response.json();
+    assert.equal(body.relay.sessionsWithOpenMac, 1);
+    assert.equal(body.relay.sessionsWithStaleMac, 0);
+    assert.equal(body.relay.sessionsWithClients, 0);
+    assert.equal(typeof body.relay.heartbeatTerminations, "number");
+
+    const macClosed = onceClosed(mac);
+    mac.close();
+    await macClosed;
+  }, { exposeDetailedHealth: true });
 });
 
 test("push routes stay disabled until explicitly enabled", async () => {
@@ -159,20 +181,18 @@ test("completion pushes are rejected after the mac relay session disconnects", a
 
 test("trusted session resolve returns the current live session for a trusted iphone", async () => {
   const phoneIdentity = makePhoneIdentity();
-  const macIdentity = makeMacIdentity();
 
   await withServer(async ({ port }) => {
     const mac = new WebSocket(`ws://127.0.0.1:${port}/relay/live-session-1`, {
       headers: {
         "x-role": "mac",
         "x-mac-device-id": "mac-1",
-        "x-mac-identity-public-key": macIdentity.macIdentityPublicKey,
+        "x-mac-identity-public-key": "mac-public-key-1",
         "x-machine-name": "Emanuele-Mac",
         "x-trusted-phone-device-id": phoneIdentity.phoneDeviceId,
         "x-trusted-phone-public-key": phoneIdentity.phoneIdentityPublicKey,
       },
     });
-    respondToResolveSignatureRequests(mac, macIdentity);
     await onceOpen(mac);
 
     const body = makeTrustedResolveBody({
@@ -188,20 +208,114 @@ test("trusted session resolve returns the current live session for a trusted iph
     });
 
     assert.equal(response.status, 200);
-    const responseBody = await response.json();
-    assert.equal(responseBody.ok, true);
-    assert.equal(responseBody.macDeviceId, "mac-1");
-    assert.equal(responseBody.macIdentityPublicKey, macIdentity.macIdentityPublicKey);
-    assert.equal(responseBody.displayName, "Emanuele-Mac");
-    assert.equal(responseBody.sessionId, "live-session-1");
-    assert.equal(typeof responseBody.responseTimestamp, "number");
-    assert.equal(typeof responseBody.signature, "string");
-    assert.ok(responseBody.signature.length > 0);
-    assert.ok(verifyResolveResponseSignature(responseBody, body, phoneIdentity));
+    assert.deepEqual(await response.json(), {
+      ok: true,
+      macDeviceId: "mac-1",
+      macIdentityPublicKey: "mac-public-key-1",
+      displayName: "Emanuele-Mac",
+      sessionId: "live-session-1",
+    });
 
     const macClosed = onceClosed(mac);
     mac.close();
     await macClosed;
+  });
+});
+
+test("trusted session resolve also works when the relay HTTP API is mounted under /relay", async () => {
+  const phoneIdentity = makePhoneIdentity();
+
+  await withServer(async ({ port }) => {
+    const mac = new WebSocket(`ws://127.0.0.1:${port}/relay/live-session-prefixed`, {
+      headers: {
+        "x-role": "mac",
+        "x-mac-device-id": "mac-prefixed",
+        "x-mac-identity-public-key": "mac-public-key-prefixed",
+        "x-trusted-phone-device-id": phoneIdentity.phoneDeviceId,
+        "x-trusted-phone-public-key": phoneIdentity.phoneIdentityPublicKey,
+      },
+    });
+    await onceOpen(mac);
+
+    const body = makeTrustedResolveBody({
+      macDeviceId: "mac-prefixed",
+      phoneIdentity,
+      nonce: "nonce-prefixed",
+      timestamp: Date.now(),
+    });
+    const response = await fetch(`http://127.0.0.1:${port}/relay/v1/trusted/session/resolve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).sessionId, "live-session-prefixed");
+
+    const macClosed = onceClosed(mac);
+    mac.close();
+    await macClosed;
+  });
+});
+
+test("trusted session resolve routes each trusted mobile device to its own live mac channel", async () => {
+  const phone = makePhoneIdentity();
+  const android = makePhoneIdentity();
+
+  await withServer(async ({ port }) => {
+    const firstMacChannel = new WebSocket(`ws://127.0.0.1:${port}/relay/live-session-phone`, {
+      headers: {
+        "x-role": "mac",
+        "x-mac-device-id": "mac-multi",
+        "x-mac-identity-public-key": "mac-public-key-multi",
+        "x-machine-name": "Emanuele-Mac",
+        "x-trusted-phone-device-id": phone.phoneDeviceId,
+        "x-trusted-phone-public-key": phone.phoneIdentityPublicKey,
+      },
+    });
+    const secondMacChannel = new WebSocket(`ws://127.0.0.1:${port}/relay/live-session-android`, {
+      headers: {
+        "x-role": "mac",
+        "x-mac-device-id": "mac-multi",
+        "x-mac-identity-public-key": "mac-public-key-multi",
+        "x-machine-name": "Emanuele-Mac",
+        "x-trusted-phone-device-id": android.phoneDeviceId,
+        "x-trusted-phone-public-key": android.phoneIdentityPublicKey,
+      },
+    });
+    await Promise.all([onceOpen(firstMacChannel), onceOpen(secondMacChannel)]);
+
+    const phoneResponse = await fetch(`http://127.0.0.1:${port}/v1/trusted/session/resolve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(makeTrustedResolveBody({
+        macDeviceId: "mac-multi",
+        phoneIdentity: phone,
+        nonce: "nonce-phone-channel",
+        timestamp: Date.now(),
+      })),
+    });
+    const androidResponse = await fetch(`http://127.0.0.1:${port}/v1/trusted/session/resolve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(makeTrustedResolveBody({
+        macDeviceId: "mac-multi",
+        phoneIdentity: android,
+        nonce: "nonce-android-channel",
+        timestamp: Date.now(),
+      })),
+    });
+
+    assert.equal(phoneResponse.status, 200);
+    assert.equal(androidResponse.status, 200);
+    assert.equal((await phoneResponse.json()).sessionId, "live-session-phone");
+    assert.equal((await androidResponse.json()).sessionId, "live-session-android");
+
+    const firstClosed = onceClosed(firstMacChannel);
+    const secondClosed = onceClosed(secondMacChannel);
+    firstMacChannel.close();
+    secondMacChannel.close();
+    await Promise.all([firstClosed, secondClosed]);
   });
 });
 
@@ -235,6 +349,36 @@ test("pairing code resolve returns bootstrap metadata for a live mac session", a
       macIdentityPublicKey: "mac-public-key-pairing-1",
       expiresAt,
     });
+
+    const macClosed = onceClosed(mac);
+    mac.close();
+    await macClosed;
+  });
+});
+
+test("pairing code resolve also works when the relay HTTP API is mounted under /relay", async () => {
+  await withServer(async ({ port }) => {
+    const expiresAt = Date.now() + 60_000;
+    const mac = new WebSocket(`ws://127.0.0.1:${port}/relay/pairing-live-prefixed`, {
+      headers: {
+        "x-role": "mac",
+        "x-mac-device-id": "mac-pairing-prefixed",
+        "x-mac-identity-public-key": "mac-public-key-pairing-prefixed",
+        "x-pairing-code": "PR23CD34EF",
+        "x-pairing-version": "2",
+        "x-pairing-expires-at": String(expiresAt),
+      },
+    });
+    await onceOpen(mac);
+
+    const response = await fetch(`http://127.0.0.1:${port}/relay/v1/pairing/code/resolve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: "PR23CD34EF" }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).sessionId, "pairing-live-prefixed");
 
     const macClosed = onceClosed(mac);
     mac.close();
@@ -311,19 +455,17 @@ test("trusted session resolve rejects iphones that are not trusted for the live 
 
 test("trusted session resolve rejects replayed nonces", async () => {
   const phoneIdentity = makePhoneIdentity();
-  const macIdentity = makeMacIdentity();
 
   await withServer(async ({ port }) => {
     const mac = new WebSocket(`ws://127.0.0.1:${port}/relay/live-session-3`, {
       headers: {
         "x-role": "mac",
         "x-mac-device-id": "mac-3",
-        "x-mac-identity-public-key": macIdentity.macIdentityPublicKey,
+        "x-mac-identity-public-key": "mac-public-key-3",
         "x-trusted-phone-device-id": phoneIdentity.phoneDeviceId,
         "x-trusted-phone-public-key": phoneIdentity.phoneIdentityPublicKey,
       },
     });
-    respondToResolveSignatureRequests(mac, macIdentity);
     await onceOpen(mac);
 
     const body = makeTrustedResolveBody({
@@ -378,24 +520,22 @@ test("trusted session resolve reports an offline mac without pretending the endp
 
 test("trusted session resolve starts working immediately after a mac updates its trusted-phone registration", async () => {
   const phoneIdentity = makePhoneIdentity();
-  const macIdentity = makeMacIdentity();
 
   await withServer(async ({ port }) => {
     const mac = new WebSocket(`ws://127.0.0.1:${port}/relay/live-session-4`, {
       headers: {
         "x-role": "mac",
         "x-mac-device-id": "mac-4",
-        "x-mac-identity-public-key": macIdentity.macIdentityPublicKey,
+        "x-mac-identity-public-key": "mac-public-key-4",
       },
     });
-    respondToResolveSignatureRequests(mac, macIdentity);
     await onceOpen(mac);
 
     mac.send(JSON.stringify({
       kind: "relayMacRegistration",
       registration: {
         macDeviceId: "mac-4",
-        macIdentityPublicKey: macIdentity.macIdentityPublicKey,
+        macIdentityPublicKey: "mac-public-key-4",
         displayName: "Updated-Mac",
         trustedPhoneDeviceId: phoneIdentity.phoneDeviceId,
         trustedPhonePublicKey: phoneIdentity.phoneIdentityPublicKey,
@@ -510,23 +650,24 @@ test("relay logs redact live session identifiers", async () => {
       const mac = new WebSocket(`ws://127.0.0.1:${port}/relay/session-sensitive`, {
         headers: { "x-role": "mac" },
       });
-      const iphone = new WebSocket(`ws://127.0.0.1:${port}/relay/session-sensitive`, {
-        headers: { "x-role": "iphone" },
-      });
+      const android = new WebSocket(
+        `ws://127.0.0.1:${port}/relay/session-sensitive?role=android`
+      );
 
-      await Promise.all([onceOpen(mac), onceOpen(iphone)]);
+      await Promise.all([onceOpen(mac), onceOpen(android)]);
 
       const macClosed = onceClosed(mac);
-      const iphoneClosed = onceClosed(iphone);
+      const androidClosed = onceClosed(android);
       mac.close();
-      iphone.close();
-      await Promise.all([macClosed, iphoneClosed]);
+      android.close();
+      await Promise.all([macClosed, androidClosed]);
     });
   } finally {
     console.log = originalLog;
   }
 
   assert.ok(capturedLogs.some((line) => line.includes("/relay/[session]")));
+  assert.ok(capturedLogs.some((line) => line.includes("role=android")));
   assert.ok(capturedLogs.some((line) => line.includes("session#")));
   assert.ok(capturedLogs.every((line) => !line.includes("session-sensitive")));
 });
@@ -584,6 +725,99 @@ test("websocket relay forwards between mac and android on the base relay path", 
     mac.close();
     android.close();
     await Promise.all([macClosed, androidClosed]);
+  });
+});
+
+test("websocket relay accepts android role from the query string", async () => {
+  await withServer(async ({ port }) => {
+    const mac = new WebSocket(`ws://127.0.0.1:${port}/relay/session-android-query`, {
+      headers: { "x-role": "mac" },
+    });
+    const android = new WebSocket(
+      `ws://127.0.0.1:${port}/relay/session-android-query?role=android`
+    );
+
+    await Promise.all([onceOpen(mac), onceOpen(android)]);
+
+    const received = new Promise((resolve) => {
+      android.once("message", (value) => resolve(value.toString("utf8")));
+    });
+    mac.send(JSON.stringify({ ok: true }));
+    assert.equal(await received, "{\"ok\":true}");
+
+    const macClosed = onceClosed(mac);
+    const androidClosed = onceClosed(android);
+    mac.close();
+    android.close();
+    await Promise.all([macClosed, androidClosed]);
+  });
+});
+
+test("websocket relay accepts iphone role from the query string", async () => {
+  await withServer(async ({ port }) => {
+    const mac = new WebSocket(`ws://127.0.0.1:${port}/relay/session-iphone-query`, {
+      headers: { "x-role": "mac" },
+    });
+    const iphone = new WebSocket(
+      `ws://127.0.0.1:${port}/relay/session-iphone-query?role=iphone`
+    );
+
+    await Promise.all([onceOpen(mac), onceOpen(iphone)]);
+
+    const received = new Promise((resolve) => {
+      iphone.once("message", (value) => resolve(value.toString("utf8")));
+    });
+    mac.send(JSON.stringify({ ok: true }));
+    assert.equal(await received, "{\"ok\":true}");
+
+    const macClosed = onceClosed(mac);
+    const iphoneClosed = onceClosed(iphone);
+    mac.close();
+    iphone.close();
+    await Promise.all([macClosed, iphoneClosed]);
+  });
+});
+
+test("websocket relay prefers x-role over query role", async () => {
+  await withServer(async ({ port }) => {
+    const mac = new WebSocket(`ws://127.0.0.1:${port}/relay/session-role-precedence`, {
+      headers: { "x-role": "mac" },
+    });
+    const invalidClient = new WebSocket(
+      `ws://127.0.0.1:${port}/relay/session-role-precedence?role=android`,
+      { headers: { "x-role": "tablet" } }
+    );
+
+    await onceOpen(mac);
+    const { code, reason } = await onceCloseDetails(invalidClient);
+
+    assert.equal(code, 4000);
+    assert.equal(reason, "Missing sessionId or invalid x-role header/query");
+
+    const macClosed = onceClosed(mac);
+    mac.close();
+    await macClosed;
+  });
+});
+
+test("websocket relay rejects invalid query roles", async () => {
+  await withServer(async ({ port }) => {
+    const mac = new WebSocket(`ws://127.0.0.1:${port}/relay/session-invalid-query-role`, {
+      headers: { "x-role": "mac" },
+    });
+    const invalidClient = new WebSocket(
+      `ws://127.0.0.1:${port}/relay/session-invalid-query-role?role=tablet`
+    );
+
+    await onceOpen(mac);
+    const { code, reason } = await onceCloseDetails(invalidClient);
+
+    assert.equal(code, 4000);
+    assert.equal(reason, "Missing sessionId or invalid x-role header/query");
+
+    const macClosed = onceClosed(mac);
+    mac.close();
+    await macClosed;
   });
 });
 
@@ -779,14 +1013,6 @@ function delay(milliseconds) {
   });
 }
 
-function safeParseJSON(value) {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
-}
-
 function makePhoneIdentity() {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
   const publicJwk = publicKey.export({ format: "jwk" });
@@ -796,44 +1022,6 @@ function makePhoneIdentity() {
     phoneIdentityPublicKey: base64UrlToBase64(publicJwk.x),
     phoneIdentityPrivateKey: base64UrlToBase64(privateJwk.d),
   };
-}
-
-function makeMacIdentity() {
-  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
-  const publicJwk = publicKey.export({ format: "jwk" });
-  const privateJwk = privateKey.export({ format: "jwk" });
-  return {
-    macIdentityPublicKey: base64UrlToBase64(publicJwk.x),
-    macIdentityPrivateKey: base64UrlToBase64(privateJwk.d),
-  };
-}
-
-function respondToResolveSignatureRequests(socket, macIdentity) {
-  socket.on("message", (value) => {
-    const parsed = safeParseJSON(value.toString("utf8"));
-    if (parsed?.kind !== "relayTrustedSessionResolveSignRequest") {
-      return;
-    }
-    const transcript = Buffer.from(parsed.transcript, "base64");
-    const signature = sign(
-      null,
-      transcript,
-      {
-        key: {
-          crv: "Ed25519",
-          d: base64ToBase64Url(macIdentity.macIdentityPrivateKey),
-          kty: "OKP",
-          x: base64ToBase64Url(macIdentity.macIdentityPublicKey),
-        },
-        format: "jwk",
-      }
-    ).toString("base64");
-    socket.send(JSON.stringify({
-      kind: "relayTrustedSessionResolveSignature",
-      requestId: parsed.requestId,
-      signature,
-    }));
-  });
 }
 
 function makeTrustedResolveBody({
@@ -869,58 +1057,6 @@ function makeTrustedResolveBody({
       }
     ).toString("base64"),
   };
-}
-
-function verifyResolveResponseSignature(responseBody, requestBody, phoneIdentity) {
-  const transcript = buildTrustedResolveResponseTranscript({
-    macDeviceId: responseBody.macDeviceId,
-    macIdentityPublicKey: responseBody.macIdentityPublicKey,
-    displayName: responseBody.displayName || "",
-    sessionId: responseBody.sessionId,
-    phoneDeviceId: phoneIdentity.phoneDeviceId,
-    phoneIdentityPublicKey: phoneIdentity.phoneIdentityPublicKey,
-    nonce: requestBody.nonce,
-    timestamp: requestBody.timestamp,
-    responseTimestamp: responseBody.responseTimestamp,
-  });
-  return verify(
-    null,
-    transcript,
-    {
-      key: {
-        crv: "Ed25519",
-        kty: "OKP",
-        x: base64ToBase64Url(responseBody.macIdentityPublicKey),
-      },
-      format: "jwk",
-    },
-    Buffer.from(responseBody.signature, "base64")
-  );
-}
-
-function buildTrustedResolveResponseTranscript({
-  macDeviceId,
-  macIdentityPublicKey,
-  displayName,
-  sessionId,
-  phoneDeviceId,
-  phoneIdentityPublicKey,
-  nonce,
-  timestamp,
-  responseTimestamp,
-}) {
-  return Buffer.concat([
-    encodeLengthPrefixedUTF8("remodex-trusted-session-resolve-response-v1"),
-    encodeLengthPrefixedUTF8(macDeviceId),
-    encodeLengthPrefixedData(Buffer.from(macIdentityPublicKey, "base64")),
-    encodeLengthPrefixedUTF8(displayName || ""),
-    encodeLengthPrefixedUTF8(sessionId),
-    encodeLengthPrefixedUTF8(phoneDeviceId),
-    encodeLengthPrefixedData(Buffer.from(phoneIdentityPublicKey, "base64")),
-    encodeLengthPrefixedUTF8(nonce),
-    encodeLengthPrefixedUTF8(String(timestamp)),
-    encodeLengthPrefixedUTF8(String(responseTimestamp)),
-  ]);
 }
 
 function buildTrustedResolveTranscript({

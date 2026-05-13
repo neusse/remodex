@@ -83,9 +83,6 @@ function createBridgeSecureTransport({
     }
 
     switch (kind) {
-    case "relayTrustedSessionResolveSignRequest":
-      handleTrustedSessionResolveSignRequest(parsed, sendControlMessage);
-      return true;
     case "clientHello":
       handleClientHello(parsed, sendControlMessage);
       return true;
@@ -100,30 +97,6 @@ function createBridgeSecureTransport({
     default:
       return false;
     }
-  }
-
-  function handleTrustedSessionResolveSignRequest(message, sendControlMessage) {
-    const requestId = normalizeNonEmptyString(message.requestId);
-    const transcript = base64ToBuffer(normalizeNonEmptyString(message.transcript));
-    if (!requestId || !transcript || transcript.length === 0) {
-      sendControlMessage({
-        kind: "relayTrustedSessionResolveSignature",
-        requestId,
-        signature: "",
-      });
-      return;
-    }
-
-    const signature = signTranscript(
-      currentDeviceState.macIdentityPrivateKey,
-      currentDeviceState.macIdentityPublicKey,
-      transcript
-    );
-    sendControlMessage({
-      kind: "relayTrustedSessionResolveSignature",
-      requestId,
-      signature,
-    });
   }
 
   function queueOutboundApplicationMessage(payloadText, sendWireMessage) {
@@ -391,7 +364,10 @@ function createBridgeSecureTransport({
         pendingHandshake.phoneIdentityPublicKey
       );
       if (previousTrustedPhonePublicKey !== pendingHandshake.phoneIdentityPublicKey) {
-        onTrustedPhoneUpdate?.(currentDeviceState);
+        onTrustedPhoneUpdate?.(currentDeviceState, {
+          phoneDeviceId: pendingHandshake.phoneDeviceId,
+          phoneIdentityPublicKey: pendingHandshake.phoneIdentityPublicKey,
+        });
       }
     }
     if (pendingHandshake.handshakeMode === HANDSHAKE_MODE_QR_BOOTSTRAP) {

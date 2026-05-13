@@ -1,4 +1,4 @@
-﻿// FILE: workspace-image.test.js
+// FILE: workspace-image.test.js
 // Purpose: Verifies bridge-side local image preview reads stay scoped and size-safe.
 // Layer: Unit test
 // Exports: node:test suite
@@ -125,7 +125,7 @@ test("workspace/readImage accepts bounded preview reads", async () => {
   assert.ok(Buffer.from(result.dataBase64, "base64").length > 0);
 });
 
-test("workspace/readImage uses the host platform, not client platform fields, for preview decisions", async (t) => {
+test("workspace/readImage ignores client platform fields for non-mac preview decisions", async (t) => {
   useProcessPlatform(t, "win32");
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "remodex-image-"));
   execFileSync("git", ["init"], { cwd: tempDir, stdio: "ignore" });
@@ -336,6 +336,25 @@ test("workspace/readImage rejects workspace images when cwd is missing", async (
     }),
     /Only images in this workspace/
   );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("workspace/readImage allows images inside non-git workspace cwd", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.homedir(), "remodex-image-"));
+  const imagePath = path.join(tempDir, "preview.png");
+  const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  fs.writeFileSync(imagePath, bytes);
+
+  try {
+    const result = await handleWorkspaceMethod("workspace/readImage", {
+      cwd: tempDir,
+      path: imagePath,
+    });
+
+    assert.equal(result.path, fs.realpathSync(imagePath));
+    assert.equal(result.dataBase64, bytes.toString("base64"));
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

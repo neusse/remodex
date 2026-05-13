@@ -3,7 +3,7 @@
 // Layer: Standalone server module
 // Exports: setupRelay, getRelayStats, hasActiveMacSession, hasAuthenticatedMacSession, resolveTrustedMacSession, resolvePairingCode
 
-const { createHash, createPublicKey, randomUUID, verify } = require("crypto");
+const { createHash, createPublicKey, verify } = require("crypto");
 const { WebSocket } = require("ws");
 
 const CLEANUP_DELAY_MS = 60_000;
@@ -13,14 +13,21 @@ const CLOSE_CODE_IPHONE_REPLACED = 4003;
 const CLOSE_CODE_MAC_ABSENCE_BUFFER_FULL = 4004;
 const MAC_ABSENCE_GRACE_MS = 15_000;
 const TRUSTED_SESSION_RESOLVE_TAG = "remodex-trusted-session-resolve-v1";
-const TRUSTED_SESSION_RESOLVE_RESPONSE_TAG = "remodex-trusted-session-resolve-response-v1";
 const TRUSTED_SESSION_RESOLVE_SKEW_MS = 90_000;
-const TRUSTED_SESSION_RESOLVE_RESPONSE_TIMEOUT_MS = 5_000;
 const SHORT_PAIRING_CODE_MIN_LENGTH = 8;
 const SHORT_PAIRING_CODE_MAX_LENGTH = 12;
 
 // In-memory session registry for one Mac host and one live mobile client per session (iOS or Android).
 const sessions = new Map();
+const relayMetrics = {
+  startedAt: Date.now(),
+  acceptedConnections: 0,
+  closedConnections: 0,
+  heartbeatTerminations: 0,
+  macMessagesRelayed: 0,
+  mobileMessagesRelayed: 0,
+  mobileMessagesRejectedDuringMacAbsence: 0,
+};
 
 function normalizeRelayRole(headerValue) {
   const raw = readHeaderString(headerValue);
@@ -30,10 +37,27 @@ function normalizeRelayRole(headerValue) {
 function isRelayMobileRole(role) {
   return role === "iphone" || role === "android";
 }
+
+function readRelayRole(req, urlPath) {
+  const headerRole = normalizeRelayRole(req.headers["x-role"]);
+  if (headerRole) {
+    return headerRole;
+  }
+
+  // Some WebSocket clients cannot send custom headers, so mobile clients may
+  // pass the same untrusted role value through the relay URL query string.
+  try {
+    const queryUrl = new URL(urlPath || "/", "http://relay.local");
+    return normalizeRelayRole(queryUrl.searchParams.get("role"));
+  } catch {
+    return "";
+  }
+}
+
 const liveSessionsByMacDeviceId = new Map();
+const liveSessionsByMacAndPhoneDeviceId = new Map();
 const liveSessionsByPairingCode = new Map();
 const usedResolveNonces = new Map();
-const pendingResolveSignatureRequests = new Map();
 
 // Attaches relay behavior to a ws WebSocketServer instance.
 function setupRelay(
@@ -47,6 +71,11 @@ function setupRelay(
   const heartbeat = setInterval(() => {
     for (const ws of wss.clients) {
       if (ws._relayAlive === false) {
+        relayMetrics.heartbeatTerminations += 1;
+        console.warn(
+          `[relay] heartbeat terminated ${ws._relayRole || "unknown"} `
+          + `${relaySessionLogLabel(ws._relaySessionId || "")}`
+        );
         ws.terminate();
         continue;
       }
@@ -62,10 +91,13 @@ function setupRelay(
     const urlPath = req.url || "";
     const match = urlPath.match(/^\/relay\/([^/?]+)/);
     const sessionId = match?.[1];
-    const role = normalizeRelayRole(req.headers["x-role"]);
+    const role = readRelayRole(req, urlPath);
+    relayMetrics.acceptedConnections += 1;
+    ws._relaySessionId = sessionId;
+    ws._relayRole = role;
 
     if (!sessionId || (role !== "mac" && !isRelayMobileRole(role))) {
-      ws.close(4000, "Missing sessionId or invalid x-role header");
+      ws.close(4000, "Missing sessionId or invalid x-role header/query");
       return;
     }
 
@@ -142,27 +174,31 @@ function setupRelay(
 
     ws.on("message", (data) => {
       const msg = typeof data === "string" ? data : data.toString("utf-8");
-      if (role === "mac" && applyMacControlMessage(session, sessionId, msg)) {
+      if (role === "mac" && applyMacRegistrationMessage(session, sessionId, msg)) {
         return;
       }
 
       if (role === "mac") {
         for (const client of session.clients) {
           if (client.readyState === WebSocket.OPEN) {
+            relayMetrics.macMessagesRelayed += 1;
             client.send(msg);
           }
         }
       } else if (session.mac?.readyState === WebSocket.OPEN) {
+        relayMetrics.mobileMessagesRelayed += 1;
         session.mac.send(msg);
       } else {
         // The relay cannot prove a buffered request really reached the bridge after
         // a reconnect, so fail fast with an explicit retry-required close instead
         // of silently dropping queued client work during a later flush.
+        relayMetrics.mobileMessagesRejectedDuringMacAbsence += 1;
         ws.close(CLOSE_CODE_MAC_ABSENCE_BUFFER_FULL, "Mac temporarily unavailable");
       }
     });
 
     ws.on("close", () => {
+      relayMetrics.closedConnections += 1;
       if (role === "mac") {
         if (session.mac === ws) {
           session.mac = null;
@@ -300,7 +336,7 @@ function relaySessionLogLabel(sessionId) {
 }
 
 // Resolves the current live relay session for a previously trusted Mac without exposing the session id publicly.
-async function resolveTrustedMacSession({
+function resolveTrustedMacSession({
   macDeviceId,
   phoneDeviceId,
   phoneIdentityPublicKey,
@@ -337,7 +373,12 @@ async function resolveTrustedMacSession({
     throw createRelayError(409, "resolve_request_replayed", "This trusted-session resolve request was already used.");
   }
 
-  const liveSession = liveSessionsByMacDeviceId.get(normalizedMacDeviceId);
+  const phoneSpecificSession = liveSessionsByMacAndPhoneDeviceId.get(
+    macPhoneSessionKey(normalizedMacDeviceId, normalizedPhoneDeviceId)
+  );
+  const liveSession = phoneSpecificSession && hasActiveMacSession(phoneSpecificSession.sessionId)
+    ? phoneSpecificSession
+    : liveSessionsByMacDeviceId.get(normalizedMacDeviceId);
   if (!liveSession || !hasActiveMacSession(liveSession.sessionId)) {
     throw createRelayError(404, "session_unavailable", "The trusted Mac is offline right now.");
   }
@@ -365,37 +406,12 @@ async function resolveTrustedMacSession({
   }
 
   usedResolveNonces.set(nonceKey, now + TRUSTED_SESSION_RESOLVE_SKEW_MS);
-  const responseTimestamp = now;
-  const responseTranscriptBytes = buildTrustedSessionResolveResponseBytes({
-    macDeviceId: normalizedMacDeviceId,
-    macIdentityPublicKey: liveSession.macIdentityPublicKey,
-    displayName: liveSession.displayName || "",
-    sessionId: liveSession.sessionId,
-    phoneDeviceId: normalizedPhoneDeviceId,
-    phoneIdentityPublicKey: normalizedPhoneIdentityPublicKey,
-    nonce: normalizedNonce,
-    timestamp: normalizedTimestamp,
-    responseTimestamp,
-  });
-  const responseSignature = await requestTrustedSessionResolveSignature({
-    liveSession,
-    transcriptBytes: responseTranscriptBytes,
-  });
-  if (!verifyTrustedSessionResolveSignature(
-    liveSession.macIdentityPublicKey,
-    responseTranscriptBytes,
-    responseSignature
-  )) {
-    throw createRelayError(502, "invalid_mac_signature", "The trusted Mac returned an invalid resolve signature.");
-  }
   return {
     ok: true,
     macDeviceId: normalizedMacDeviceId,
     macIdentityPublicKey: liveSession.macIdentityPublicKey,
     displayName: liveSession.displayName || null,
     sessionId: liveSession.sessionId,
-    responseTimestamp,
-    signature: responseSignature,
   };
 }
 
@@ -441,19 +457,50 @@ function resolvePairingCode({
 function getRelayStats() {
   let totalClients = 0;
   let sessionsWithMac = 0;
+  let sessionsWithOpenMac = 0;
+  let sessionsWithStaleMac = 0;
+  let sessionsWithClients = 0;
+  let cleanupPending = 0;
+  let macAbsencePending = 0;
 
   for (const session of sessions.values()) {
     totalClients += session.clients.size;
+    if (session.clients.size > 0) {
+      sessionsWithClients += 1;
+    }
     if (session.mac) {
       sessionsWithMac += 1;
+      if (session.mac.readyState === WebSocket.OPEN) {
+        sessionsWithOpenMac += 1;
+      } else {
+        sessionsWithStaleMac += 1;
+      }
+    }
+    if (session.cleanupTimer) {
+      cleanupPending += 1;
+    }
+    if (session.macAbsenceTimer) {
+      macAbsencePending += 1;
     }
   }
 
   return {
     activeSessions: sessions.size,
     sessionsWithMac,
+    sessionsWithOpenMac,
+    sessionsWithStaleMac,
+    sessionsWithClients,
     totalClients,
     pairingCodes: liveSessionsByPairingCode.size,
+    cleanupPending,
+    macAbsencePending,
+    uptimeSeconds: Math.round((Date.now() - relayMetrics.startedAt) / 1000),
+    acceptedConnections: relayMetrics.acceptedConnections,
+    closedConnections: relayMetrics.closedConnections,
+    heartbeatTerminations: relayMetrics.heartbeatTerminations,
+    macMessagesRelayed: relayMetrics.macMessagesRelayed,
+    mobileMessagesRelayed: relayMetrics.mobileMessagesRelayed,
+    mobileMessagesRejectedDuringMacAbsence: relayMetrics.mobileMessagesRejectedDuringMacAbsence,
   };
 }
 
@@ -482,23 +529,20 @@ function registerLiveMacSession(macRegistration) {
     return;
   }
   liveSessionsByMacDeviceId.set(macRegistration.macDeviceId, macRegistration);
+  if (macRegistration.trustedPhoneDeviceId) {
+    liveSessionsByMacAndPhoneDeviceId.set(
+      macPhoneSessionKey(macRegistration.macDeviceId, macRegistration.trustedPhoneDeviceId),
+      macRegistration
+    );
+  }
   if (macRegistration.pairingCode && Number.isFinite(macRegistration.pairingExpiresAt)) {
     liveSessionsByPairingCode.set(macRegistration.pairingCode, macRegistration);
   }
 }
 
-function applyMacControlMessage(session, sessionId, rawMessage) {
+function applyMacRegistrationMessage(session, sessionId, rawMessage) {
   const parsed = safeParseJSON(rawMessage);
-  if (!parsed || typeof parsed !== "object") {
-    return false;
-  }
-
-  if (parsed.kind === "relayTrustedSessionResolveSignature") {
-    completeTrustedSessionResolveSignature(parsed);
-    return true;
-  }
-
-  if (parsed.kind !== "relayMacRegistration" || typeof parsed.registration !== "object") {
+  if (parsed?.kind !== "relayMacRegistration" || typeof parsed.registration !== "object") {
     return false;
   }
 
@@ -506,75 +550,6 @@ function applyMacControlMessage(session, sessionId, rawMessage) {
   session.macRegistration = normalizeMacRegistration(parsed.registration, sessionId);
   registerLiveMacSession(session.macRegistration);
   return true;
-}
-
-function requestTrustedSessionResolveSignature({
-  liveSession,
-  transcriptBytes,
-  timeoutMs = TRUSTED_SESSION_RESOLVE_RESPONSE_TIMEOUT_MS,
-}) {
-  const session = sessions.get(liveSession.sessionId);
-  const mac = session?.mac;
-  if (!mac || mac.readyState !== WebSocket.OPEN) {
-    throw createRelayError(404, "session_unavailable", "The trusted Mac is offline right now.");
-  }
-
-  const requestId = randomUUID();
-  const transcript = transcriptBytes.toString("base64");
-  const payload = {
-    kind: "relayTrustedSessionResolveSignRequest",
-    requestId,
-    transcript,
-  };
-
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      pendingResolveSignatureRequests.delete(requestId);
-      reject(createRelayError(504, "mac_signature_timeout", "The trusted Mac did not sign the resolve response in time."));
-    }, timeoutMs);
-    timeout.unref?.();
-    pendingResolveSignatureRequests.set(requestId, {
-      sessionId: liveSession.sessionId,
-      resolve(value) {
-        clearTimeout(timeout);
-        resolve(value);
-      },
-      reject(error) {
-        clearTimeout(timeout);
-        reject(error);
-      },
-    });
-    try {
-      mac.send(JSON.stringify(payload), (error) => {
-        if (!error) return;
-        const pending = pendingResolveSignatureRequests.get(requestId);
-        if (!pending) return;
-        pendingResolveSignatureRequests.delete(requestId);
-        pending.reject(createRelayError(502, "mac_signature_send_failed", "Could not request a resolve signature from the trusted Mac."));
-      });
-    } catch {
-      const pending = pendingResolveSignatureRequests.get(requestId);
-      if (pending) {
-        pendingResolveSignatureRequests.delete(requestId);
-        pending.reject(createRelayError(502, "mac_signature_send_failed", "Could not request a resolve signature from the trusted Mac."));
-      }
-    }
-  });
-}
-
-function completeTrustedSessionResolveSignature(message) {
-  const requestId = normalizeNonEmptyString(message.requestId);
-  const signature = normalizeNonEmptyString(message.signature);
-  const pending = pendingResolveSignatureRequests.get(requestId);
-  if (!pending) {
-    return;
-  }
-  pendingResolveSignatureRequests.delete(requestId);
-  if (!signature) {
-    pending.reject(createRelayError(502, "missing_mac_signature", "The trusted Mac resolve signature was missing."));
-    return;
-  }
-  pending.resolve(signature);
 }
 
 function unregisterLiveMacSession(macRegistration, sessionId) {
@@ -588,6 +563,15 @@ function unregisterLiveMacSession(macRegistration, sessionId) {
     liveSessionsByMacDeviceId.delete(macDeviceId);
   }
 
+  const trustedPhoneDeviceId = macRegistration?.trustedPhoneDeviceId;
+  if (trustedPhoneDeviceId) {
+    const phoneKey = macPhoneSessionKey(macDeviceId, trustedPhoneDeviceId);
+    const existingPhoneSession = liveSessionsByMacAndPhoneDeviceId.get(phoneKey);
+    if (existingPhoneSession?.sessionId === sessionId) {
+      liveSessionsByMacAndPhoneDeviceId.delete(phoneKey);
+    }
+  }
+
   const pairingCode = macRegistration?.pairingCode;
   if (pairingCode) {
     const existingPairingCode = liveSessionsByPairingCode.get(pairingCode);
@@ -595,6 +579,10 @@ function unregisterLiveMacSession(macRegistration, sessionId) {
       liveSessionsByPairingCode.delete(pairingCode);
     }
   }
+}
+
+function macPhoneSessionKey(macDeviceId, phoneDeviceId) {
+  return `${macDeviceId}\u0000${phoneDeviceId}`;
 }
 
 function readMacRegistrationHeaders(headers, sessionId) {
@@ -638,31 +626,6 @@ function buildTrustedSessionResolveBytes({
     encodeLengthPrefixedData(Buffer.from(phoneIdentityPublicKey, "base64")),
     encodeLengthPrefixedUTF8(nonce),
     encodeLengthPrefixedUTF8(String(timestamp)),
-  ]);
-}
-
-function buildTrustedSessionResolveResponseBytes({
-  macDeviceId,
-  macIdentityPublicKey,
-  displayName,
-  sessionId,
-  phoneDeviceId,
-  phoneIdentityPublicKey,
-  nonce,
-  timestamp,
-  responseTimestamp,
-}) {
-  return Buffer.concat([
-    encodeLengthPrefixedUTF8(TRUSTED_SESSION_RESOLVE_RESPONSE_TAG),
-    encodeLengthPrefixedUTF8(macDeviceId),
-    encodeLengthPrefixedData(Buffer.from(macIdentityPublicKey, "base64")),
-    encodeLengthPrefixedUTF8(displayName || ""),
-    encodeLengthPrefixedUTF8(sessionId),
-    encodeLengthPrefixedUTF8(phoneDeviceId),
-    encodeLengthPrefixedData(Buffer.from(phoneIdentityPublicKey, "base64")),
-    encodeLengthPrefixedUTF8(nonce),
-    encodeLengthPrefixedUTF8(String(timestamp)),
-    encodeLengthPrefixedUTF8(String(responseTimestamp)),
   ]);
 }
 

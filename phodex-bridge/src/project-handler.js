@@ -1,4 +1,4 @@
-﻿// FILE: project-handler.js
+// FILE: project-handler.js
 // Purpose: Serves safe Mac-local project folder discovery and creation requests from the iOS app.
 // Layer: Bridge handler
 // Exports: handleProjectRequest plus testable project filesystem helpers

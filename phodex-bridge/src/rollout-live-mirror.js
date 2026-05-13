@@ -1,4 +1,4 @@
-﻿// FILE: rollout-live-mirror.js
+// FILE: rollout-live-mirror.js
 // Purpose: Mirrors desktop-origin rollout activity back into live bridge notifications for iPhone catch-up.
 // Layer: CLI helper
 // Exports: createRolloutLiveMirrorController

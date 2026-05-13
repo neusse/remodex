@@ -1,4 +1,4 @@
-﻿// FILE: workspace-checkpoints.js
+// FILE: workspace-checkpoints.js
 // Purpose: Captures, diffs, and restores hidden Git checkpoints for turn-scoped undo.
 // Layer: Bridge workspace support
 // Exports: workspaceCheckpointCapture, workspaceCheckpointCopy, workspaceCheckpointDiff,

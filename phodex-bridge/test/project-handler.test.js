@@ -1,4 +1,4 @@
-﻿// FILE: project-handler.test.js
+// FILE: project-handler.test.js
 // Purpose: Verifies safe local project folder browsing and creation RPC helpers.
 // Layer: Unit test
 // Exports: node:test suite

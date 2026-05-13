@@ -1,4 +1,4 @@
-﻿// FILE: codex-home.js
+// FILE: codex-home.js
 // Purpose: Resolves local Codex cache paths shared by bridge services.
 // Layer: CLI helper
 // Exports: resolveCodexHome, resolveCodexGeneratedImagesRoot

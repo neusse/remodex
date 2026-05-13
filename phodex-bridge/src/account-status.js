@@ -160,9 +160,8 @@ function normalizeHostPlatform(platform) {
 
 function deriveHostCapabilities(platform) {
   const isMacOS = platform === "darwin";
-  const isWindows = platform === "win32";
   return {
-    desktopHandoff: isMacOS || isWindows,
+    desktopHandoff: isMacOS,
     displayWake: isMacOS,
     keepAwake: isMacOS,
     hostBrowserLogin: isMacOS,

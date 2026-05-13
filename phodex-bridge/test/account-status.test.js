@@ -222,20 +222,6 @@ test("composeAccountStatus reports a pending login when no token is available ye
   assert.equal(status.tokenReady, false);
 });
 
-test("composeAccountStatus reports Windows desktop handoff capability", () => {
-  const status = composeAccountStatus({
-    hostPlatform: "win32",
-  });
-
-  assert.equal(status.hostPlatform, "windows");
-  assert.deepEqual(status.hostCapabilities, {
-    desktopHandoff: true,
-    displayWake: false,
-    keepAwake: false,
-    hostBrowserLogin: false,
-  });
-});
-
 test("composeSanitizedAuthStatusFromSettledResults keeps the available auth snapshot when account/read fails", () => {
   const status = composeSanitizedAuthStatusFromSettledResults(withMacHost({
     accountReadResult: {

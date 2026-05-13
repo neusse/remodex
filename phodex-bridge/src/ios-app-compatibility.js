@@ -1,4 +1,4 @@
-﻿// FILE: ios-app-compatibility.js
+// FILE: ios-app-compatibility.js
 // Purpose: Centralizes conservative bridge gating for App Store iPhone version compatibility.
 // Layer: CLI helper
 // Exports: version comparison + bridge/iPhone compatibility helpers

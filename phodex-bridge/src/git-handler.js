@@ -111,7 +111,7 @@ async function handleGitMethod(method, params, options = {}) {
     case "git/generateCommitMessage":
       return gitGenerateCommitMessage(cwd, params, options);
     case "git/push":
-      return gitPush(cwd, params);
+      return gitPush(cwd);
     case "git/pull":
       return gitPull(cwd);
     case "git/branches":
@@ -400,30 +400,18 @@ async function threadGenerateTitle(params, options = {}) {
 
 // ─── Git Push ─────────────────────────────────────────────────
 
-async function gitPush(cwd, params = {}) {
+async function gitPush(cwd) {
   try {
     const statusOutput = await git(cwd, "status", "--porcelain=v1", "-b");
     const branchLine = statusOutput.trim().split("\n").filter(Boolean)[0] || "";
     const tracking = parseTrackingFromStatus(branchLine);
-    const requestedRemote = normalizeRemoteName(params.remote || params.pushRemote || params.remoteName);
-    const remote = requestedRemote || trackingRemoteName(tracking) || "origin";
-    if (!(await remoteExists(cwd, remote))) {
-      throw gitError(
-        "no_remote",
-        requestedRemote
-          ? `Remote '${requestedRemote}' is not configured. Add it before pushing to your fork.`
-          : "Add a Git remote before pushing."
-      );
+    if (!(await pushRemoteAvailable(cwd, tracking))) {
+      throw gitError("no_remote", "Add a Git remote before pushing.");
     }
+    const remote = trackingRemoteName(tracking) || "origin";
 
     const branchOutput = await git(cwd, "rev-parse", "--abbrev-ref", "HEAD");
     const branch = branchOutput.trim();
-
-    if (requestedRemote) {
-      await git(cwd, "push", requestedRemote, "HEAD");
-      const status = await gitStatus(cwd);
-      return { branch, remote, status };
-    }
 
     // Try normal push first; if no upstream, set it
     try {
@@ -602,9 +590,7 @@ async function gitLog(cwd) {
 // ─── Git Create Branch ────────────────────────────────────────
 
 async function gitCreateBranch(cwd, params) {
-  const name = normalizeCreatedBranchName(params.name, {
-    prefixRemodex: params.prefixRemodex !== false,
-  });
+  const name = normalizeCreatedBranchName(params.name);
   if (!name) {
     throw gitError("missing_branch_name", "Branch name is required.");
   }
@@ -1090,7 +1076,7 @@ async function gitRunStackedAction(cwd, params, options = {}) {
     emitPhase("push", "started");
     result.push = {
       state: "pushed",
-      ...(await gitPush(cwd, params)),
+      ...(await gitPush(cwd)),
     };
     emitPhase("push", "completed");
   }
@@ -1120,7 +1106,7 @@ async function gitCreatePullRequest(cwd, params, options = {}) {
   }
 
   if (params.pushBeforeCreate !== false && (!status.tracking || status.ahead > 0)) {
-    await gitPush(cwd, params);
+    await gitPush(cwd);
   }
 
   const branchResult = await gitBranches(cwd);
@@ -1601,17 +1587,6 @@ function normalizeNonEmptyLine(rawValue) {
     .trim();
 }
 
-function normalizeRemoteName(rawValue) {
-  const remote = normalizeNonEmptyLine(rawValue);
-  if (!remote) {
-    return "";
-  }
-  if (!/^[A-Za-z0-9._-]+$/.test(remote)) {
-    throw gitError("invalid_remote", "Remote name contains unsupported characters.");
-  }
-  return remote;
-}
-
 function normalizeNonEmptyMultilineString(rawValue) {
   if (typeof rawValue !== "string") {
     return "";
@@ -2090,7 +2065,7 @@ function normalizeWorktreeBranchRef(rawRef) {
   return branchName || null;
 }
 
-function normalizeCreatedBranchName(rawName, { prefixRemodex = true } = {}) {
+function normalizeCreatedBranchName(rawName) {
   const trimmed = typeof rawName === "string" ? rawName.trim() : "";
   if (!trimmed) {
     return "";
@@ -2102,7 +2077,7 @@ function normalizeCreatedBranchName(rawName, { prefixRemodex = true } = {}) {
     .map((segment) => segment.trim().replace(/\s+/g, "-"))
     .join("/");
 
-  if (!prefixRemodex || normalized.startsWith("remodex/")) {
+  if (normalized.startsWith("remodex/")) {
     return normalized;
   }
   return `remodex/${normalized}`;
