@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import com.remodex.mobile.core.error.CodexServiceError
 import com.remodex.mobile.core.model.JSONValue
 import com.remodex.mobile.core.model.RPCMessage
+import com.remodex.mobile.core.readRemodexAppVersionName
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.json.JsonObject
@@ -190,16 +191,4 @@ internal suspend fun CodexService.rpcRequestWhileHandshaking(
     }
 }
 
-internal fun CodexService.readAppVersion(): String =
-    try {
-        val pm = appContext.packageManager
-        val pkg = appContext.packageName
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0)).versionName ?: "0.1.3"
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getPackageInfo(pkg, 0).versionName ?: "0.1.3"
-        }
-    } catch (_: Exception) {
-        "0.1.3"
-    }
+internal fun CodexService.readAppVersion(): String = readRemodexAppVersionName(appContext)

@@ -1,7 +1,6 @@
-package com.remodex.mobile.ui.about
+﻿package com.remodex.mobile.ui.about
 
 import android.content.Context
-import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.remodex.mobile.R
+import com.remodex.mobile.core.readRemodexAppVersionName
 import com.remodex.mobile.ui.theme.remodexScreenTopAppBarColors
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,7 +35,7 @@ fun AboutScreen(
 ) {
     BackHandler(onBack = onNavigateBack)
     val context = LocalContext.current
-    val versionName = remember { readAppVersionName(context) }
+    val versionName = remember { readRemodexAppVersionName(context) }
 
     Scaffold(
         modifier = modifier,
@@ -83,7 +83,6 @@ fun AboutScreen(
         }
     }
 }
-
 @Composable
 internal fun LocalInfoSection(
     title: String,
@@ -99,17 +98,3 @@ internal fun LocalInfoSection(
         )
     }
 }
-
-private fun readAppVersionName(context: Context): String =
-    try {
-        val pm = context.packageManager
-        val pkg = context.packageName
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0)).versionName ?: "0.1.3"
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getPackageInfo(pkg, 0).versionName ?: "0.1.3"
-        }
-    } catch (_: Exception) {
-        "0.1.3"
-    }

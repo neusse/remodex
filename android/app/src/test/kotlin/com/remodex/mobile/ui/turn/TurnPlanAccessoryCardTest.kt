@@ -8,9 +8,7 @@ import com.remodex.mobile.core.model.CodexPlanStep
 import com.remodex.mobile.core.model.CodexPlanStepStatus
 import java.time.Instant
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TurnPlanAccessoryCardTest {
@@ -59,104 +57,49 @@ class TurnPlanAccessoryCardTest {
     }
 
     @Test
-    fun `pinned plan accepts streaming system plan`() {
-        val message =
-            basePlanMessage(
-                isStreaming = true,
-                steps = listOf(CodexPlanStep(step = "Ship baseline", status = CodexPlanStepStatus.pending)),
-            )
-        assertTrue(message.shouldDisplayPinnedPlanAccessory())
-    }
-
-    @Test
-    fun `pinned plan rejects completed non-streaming plan`() {
-        val message =
-            basePlanMessage(
-                isStreaming = false,
-                steps = listOf(CodexPlanStep(step = "Done", status = CodexPlanStepStatus.completed)),
-            )
-        assertFalse(message.shouldDisplayPinnedPlanAccessory())
-    }
-
-    @Test
-    fun `completed plan accepts completed non-streaming plan`() {
-        val message =
-            basePlanMessage(
-                isStreaming = false,
-                steps =
-                    listOf(
-                        CodexPlanStep(step = "A", status = CodexPlanStepStatus.completed),
-                        CodexPlanStep(step = "B", status = CodexPlanStepStatus.completed),
-                    ),
-            )
-        assertTrue(message.shouldDisplayCompletedPlanAccessory())
-    }
-
-    @Test
-    fun `completed plan rejects active plan`() {
-        val message =
-            basePlanMessage(
-                isStreaming = false,
-                steps =
-                    listOf(
-                        CodexPlanStep(step = "A", status = CodexPlanStepStatus.completed),
-                        CodexPlanStep(step = "B", status = CodexPlanStepStatus.inProgress),
-                    ),
-            )
-        assertFalse(message.shouldDisplayCompletedPlanAccessory())
-    }
-
-    @Test
-    fun `selection picks latest active plan message`() {
-        val oldActive =
-            basePlanMessage(
-                id = "old",
-                steps = listOf(CodexPlanStep(step = "First", status = CodexPlanStepStatus.inProgress)),
-            )
-        val finished =
-            basePlanMessage(
-                id = "finished",
-                steps = listOf(CodexPlanStep(step = "Done", status = CodexPlanStepStatus.completed)),
-            )
-        val latestActive =
-            basePlanMessage(
-                id = "latest",
-                steps = listOf(CodexPlanStep(step = "Second", status = CodexPlanStepStatus.pending)),
-            )
-
-        val selected = selectPinnedPlanAccessoryMessage(listOf(oldActive, finished, latestActive))
-        assertEquals("latest", selected?.id)
-    }
-
-    @Test
-    fun `selection returns null when no active plan exists`() {
+    fun `plan bar keeps latest created plan even when all steps are completed`() {
         val completed =
             basePlanMessage(
+                id = "completed",
                 steps = listOf(CodexPlanStep(step = "Done", status = CodexPlanStepStatus.completed)),
-            )
-        assertNull(selectPinnedPlanAccessoryMessage(listOf(completed)))
-    }
-
-    @Test
-    fun `completed selection picks latest completed plan message`() {
-        val oldCompleted =
-            basePlanMessage(
-                id = "old",
-                steps = listOf(CodexPlanStep(step = "Old", status = CodexPlanStepStatus.completed)),
             )
         val active =
             basePlanMessage(
                 id = "active",
-                steps = listOf(CodexPlanStep(step = "Doing", status = CodexPlanStepStatus.inProgress)),
-            )
-        val latestCompleted =
-            basePlanMessage(
-                id = "latest",
-                steps = listOf(CodexPlanStep(step = "Done", status = CodexPlanStepStatus.completed)),
+                steps = listOf(CodexPlanStep(step = "Work", status = CodexPlanStepStatus.inProgress)),
             )
 
-        val selected = selectCompletedPlanAccessoryMessage(listOf(oldCompleted, active, latestCompleted))
-        assertEquals("latest", selected?.id)
+        val selected = selectPlanBarMessage(listOf(active, completed))
+        assertEquals("completed", selected?.id)
+    }
+
+    @Test
+    fun `plan bar skips hidden and closed plan ids`() {
+        val oldActive =
+            basePlanMessage(
+                id = "old",
+                steps = listOf(CodexPlanStep(step = "Old", status = CodexPlanStepStatus.inProgress)),
+            )
+        val latestActive =
+            basePlanMessage(
+                id = "latest",
+                steps = listOf(CodexPlanStep(step = "Latest", status = CodexPlanStepStatus.pending)),
+            )
+
+        assertEquals(
+            "old",
+            selectPlanBarMessage(
+                messages = listOf(oldActive, latestActive),
+                hiddenMessageIds = listOf("latest"),
+            )?.id,
+        )
+        assertNull(
+            selectPlanBarMessage(
+                messages = listOf(oldActive, latestActive),
+                hiddenMessageIds = listOf("latest"),
+                closedMessageIds = listOf("old"),
+            ),
+        )
     }
 
     private fun basePlanMessage(

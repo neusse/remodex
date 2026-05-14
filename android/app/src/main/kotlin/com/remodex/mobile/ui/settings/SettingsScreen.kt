@@ -2,7 +2,6 @@ package com.remodex.mobile.ui.settings
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.Manifest
 import android.net.Uri
 import android.provider.Settings
@@ -69,6 +68,7 @@ import com.remodex.mobile.core.model.AppThemePreference
 import com.remodex.mobile.core.model.ContextWindowUsage
 import com.remodex.mobile.core.model.CodexRateLimitBucket
 import com.remodex.mobile.core.notification.LocalNotificationSettings
+import com.remodex.mobile.core.readRemodexAppVersionName
 import com.remodex.mobile.core.transport.ConnectionState
 import com.remodex.mobile.data.AppFontPreferences
 import com.remodex.mobile.data.CodexRepository
@@ -97,7 +97,7 @@ fun SettingsScreen(
     var localRelayHostOverride by remember {
         mutableStateOf(AppContainer.sessionPersistence.loadLocalRelayHostOverride().orEmpty())
     }
-    val versionName = remember { readAppVersionName(context) }
+    val versionName = remember { readRemodexAppVersionName(context) }
 
     Scaffold(
         modifier = modifier,
@@ -703,20 +703,6 @@ private fun settingsLanguageSubtitleRes(option: AppLanguagePreference): Int =
     when (option) {
         AppLanguagePreference.english -> R.string.settings_language_english_subtitle
         AppLanguagePreference.system -> R.string.settings_language_system_subtitle
-    }
-
-private fun readAppVersionName(context: Context): String =
-    try {
-        val pm = context.packageManager
-        val pkg = context.packageName
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0)).versionName ?: "0.1.3"
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getPackageInfo(pkg, 0).versionName ?: "0.1.3"
-        }
-    } catch (_: Exception) {
-        "0.1.3"
     }
 
 private fun openSystemNotificationSettings(context: Context) {

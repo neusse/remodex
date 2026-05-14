@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,14 +25,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.remodex.mobile.R
 import com.remodex.mobile.core.model.CodexCollaborationModeKind
 import com.remodex.mobile.core.model.CodexMessage
-import com.remodex.mobile.core.model.CodexPlanStepStatus
 import com.remodex.mobile.data.QueuedTurnDraftPreview
 import com.remodex.mobile.ui.theme.RemodexModalBottomSheet
+import com.remodex.mobile.ui.theme.isAgentLightChrome
 
 @Composable
 internal fun QueuedDraftsCard(
@@ -431,55 +434,76 @@ internal fun PlanDetailsActionSheet(
     if (!visible || message == null) return
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val snapshot = PlanAccessorySnapshot.fromMessage(message)
+    val lightChrome = isAgentLightChrome()
+    val accent =
+        if (lightChrome) {
+            Color(0xFFE4C25F)
+        } else {
+            MaterialTheme.colorScheme.tertiary
+        }
+    val panelColor =
+        if (lightChrome) {
+            Color(0xFF5A4312).copy(alpha = 0.14f)
+        } else {
+            Color(0xFF5A4312).copy(alpha = 0.30f)
+        }
+    val contentColor =
+        if (lightChrome) {
+            MaterialTheme.colorScheme.onSurface
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        }
     RemodexModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+        Surface(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            shape = MaterialTheme.shapes.medium,
+            color = panelColor,
         ) {
-            Text(
-                text = stringResource(R.string.turn_plan_sheet_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = snapshot.summary,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            snapshot.progressText?.let { progress ->
-                Text(
-                    text = stringResource(R.string.turn_plan_sheet_progress, progress),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            snapshot.steps.forEachIndexed { index, step ->
-                val statusLabel =
-                    when (step.status) {
-                        CodexPlanStepStatus.inProgress -> stringResource(R.string.turn_plan_step_doing)
-                        CodexPlanStepStatus.pending -> stringResource(R.string.turn_plan_step_todo)
-                        CodexPlanStepStatus.completed -> stringResource(R.string.turn_plan_step_done)
-                    }
-                Text(
-                    text = "${index + 1}. [$statusLabel] ${step.step}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End,
+            Column(
+                modifier =
+                    Modifier
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                        .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(android.R.string.cancel))
+                Text(
+                    text = stringResource(R.string.turn_plan_sheet_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = accent,
+                )
+                snapshot.progressText?.let { progress ->
+                    Text(
+                        text = stringResource(R.string.turn_plan_sheet_progress, progress),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = accent,
+                    )
                 }
-                TextButton(
-                    onClick = onApplyPlan,
-                    enabled = canApplyPlan,
+                TurnRichMarkdownBody(
+                    markdown = planMarkdownFromMessage(message),
+                    contentColor = contentColor,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyPrefix = "${message.id}-plan-sheet",
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
                 ) {
-                    Text(stringResource(R.string.turn_plan_apply_action))
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(android.R.string.cancel))
+                    }
+                    TextButton(
+                        onClick = onApplyPlan,
+                        enabled = canApplyPlan,
+                    ) {
+                        Text(stringResource(R.string.turn_plan_apply_action))
+                    }
                 }
             }
         }

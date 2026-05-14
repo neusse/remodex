@@ -533,25 +533,6 @@ private fun GitRepoDiffSummaryRow(
 }
 
 @Composable
-private fun GitRepoDiffStagingDot(staging: GitPathStagingUi) {
-    val label =
-        when {
-            staging.isUntracked -> stringResource(R.string.git_repo_diff_staging_untracked)
-            staging.staged && staging.unstaged -> stringResource(R.string.git_repo_diff_staging_mixed)
-            staging.staged && !staging.unstaged -> stringResource(R.string.git_repo_diff_staging_staged_only)
-            !staging.staged && staging.unstaged -> stringResource(R.string.git_repo_diff_staging_unstaged_only)
-            else -> null
-        }
-    if (label != null) {
-        Text(
-            text = "· $label",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
 private fun GitRepoDiffFileTile() {
     Surface(
         shape = RoundedCornerShape(14.dp),

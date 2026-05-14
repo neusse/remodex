@@ -55,19 +55,6 @@ class QrPairingValidatorTest {
     }
 
     @Test
-    fun unsupportedHostedPhodexRelay_isRejected() {
-        val now = 1_700_000_000_000L
-        val expires = now + 3600_000L
-        val json =
-            """
-            {"v":$CODEX_PAIRING_QR_VERSION,"relay":"wss://api.phodex.app/relay","sessionId":"sess",
-            "macDeviceId":"mac","macIdentityPublicKey":"$validMacIdentityPublicKey","expiresAt":$expires}
-            """.trimIndent()
-        val r = validatePairingQrCode(json, nowEpochMillis = now)
-        assertIs<QrPairingValidationResult.ScanError>(r)
-    }
-
-    @Test
     fun malformedMacIdentityKey_isRejected() {
         val now = 1_700_000_000_000L
         val expires = now + 3600_000L

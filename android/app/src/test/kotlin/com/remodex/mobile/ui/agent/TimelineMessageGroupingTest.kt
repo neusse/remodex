@@ -43,6 +43,16 @@ class TimelineMessageGroupingTest {
             createdAt = t0,
         )
 
+    private fun plan(id: String): CodexMessage =
+        CodexMessage(
+            id = id,
+            threadId = "t1",
+            role = CodexMessageRole.system,
+            kind = CodexMessageKind.plan,
+            text = "Plan",
+            createdAt = t0,
+        )
+
     @Test
     fun upToTwoCommands_remainSingles() {
         val items = listOf(cmd("a"), cmd("b")).toTimelineListItems()
@@ -479,6 +489,15 @@ class TimelineMessageGroupingTest {
         assertEquals(2, items.size)
         assertIs<TimelineListItem.Single>(items[0]).also { assertEquals("c1", it.message.id) }
         assertIs<TimelineListItem.Single>(items[1]).also { assertEquals("f1", it.message.id) }
+    }
+
+    @Test
+    fun planRows_areRenderedInTimeline() {
+        val items = listOf(cmd("c1"), plan("p1"), file("f1")).toTimelineListItems()
+        assertEquals(3, items.size)
+        assertIs<TimelineListItem.Single>(items[0]).also { assertEquals("c1", it.message.id) }
+        assertIs<TimelineListItem.Single>(items[1]).also { assertEquals("p1", it.message.id) }
+        assertIs<TimelineListItem.Single>(items[2]).also { assertEquals("f1", it.message.id) }
     }
 
     @Test

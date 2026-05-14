@@ -80,6 +80,7 @@ fun MessageList(
     onLoadEarlierMessages: (() -> Unit)? = null,
     commandExecutionDetailsByItemId: Map<String, CommandExecutionDetails> = emptyMap(),
     onOpenFullMessage: ((CodexMessage) -> Unit)? = null,
+    onOpenPlanDetails: ((CodexMessage) -> Unit)? = null,
     isAssistantTurnActive: Boolean = false,
     activeTurnId: String? = null,
     verticalItemSpacing: Dp = 10.dp,
@@ -107,6 +108,7 @@ fun MessageList(
                     message = msg,
                     commandExecutionDetails = msg.itemId?.let { commandExecutionDetailsByItemId[it] },
                     onOpenFullMessage = onOpenFullMessage,
+                    onOpenPlanDetails = onOpenPlanDetails,
                 )
         }
     },

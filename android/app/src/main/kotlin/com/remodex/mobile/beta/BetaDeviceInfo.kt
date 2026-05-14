@@ -1,26 +1,11 @@
 package com.remodex.mobile.beta
 
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import java.security.MessageDigest
 
 object BetaDeviceInfo {
-    fun appVersionName(context: Context): String =
-        try {
-            val pm = context.packageManager
-            val pkg = context.packageName
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0)).versionName ?: "0.1.3"
-            } else {
-                @Suppress("DEPRECATION")
-                pm.getPackageInfo(pkg, 0).versionName ?: "0.1.3"
-            }
-        } catch (_: Exception) {
-            "0.1.3"
-        }
-
     fun coarseDeviceModel(): String {
         val manufacturer = Build.MANUFACTURER.trim()
         val model = Build.MODEL.trim()

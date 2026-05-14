@@ -19,8 +19,6 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 const PET_WINDOW_SIZE: f64 = 80.0;
 const BUNDLE_MANIFEST: &str = "remodex-bundle.json";
-const UNSUPPORTED_HOSTED_RELAY_HOST: &str = "api.phodex.app";
-const UNSUPPORTED_HOSTED_RELAY_PATH: &str = "/relay";
 
 // ─── Data types ──────────────────────────────────────────────
 
@@ -838,14 +836,10 @@ fn relay_url_parts(raw: &str) -> Option<(String, String, String)> {
 }
 
 fn relay_url_policy(raw: &str) -> (String, String) {
-    let Some((scheme, host, path)) = relay_url_parts(raw) else {
+    let Some((scheme, host, _path)) = relay_url_parts(raw) else {
         return ("fail".to_string(), "Relay URL is invalid or contains unsupported credentials.".to_string());
     };
     let host_lower = host.to_lowercase();
-    let normalized_path = path.trim_end_matches('/').to_lowercase();
-    if host_lower == UNSUPPORTED_HOSTED_RELAY_HOST && normalized_path == UNSUPPORTED_HOSTED_RELAY_PATH {
-        return ("fail".to_string(), "This old hosted Phodex relay is blocked.".to_string());
-    }
     let cleartext = scheme == "ws" || scheme == "http";
     if cleartext && !is_local_relay_host(&host) {
         return ("fail".to_string(), "Public ws:// relay URLs are not allowed. Use local/Tailscale ws:// or secure wss://.".to_string());
@@ -2444,9 +2438,8 @@ mod tests {
     }
 
     #[test]
-    fn relay_url_policy_rejects_public_cleartext_old_hosted_and_credentials() {
+    fn relay_url_policy_rejects_public_cleartext_and_credentials() {
         assert_eq!(relay_url_policy("ws://relay.example.com/relay").0, "fail");
-        assert_eq!(relay_url_policy("wss://api.phodex.app/relay").0, "fail");
         assert_eq!(relay_url_policy("wss://user:pass@relay.example.com/relay").0, "fail");
     }
 

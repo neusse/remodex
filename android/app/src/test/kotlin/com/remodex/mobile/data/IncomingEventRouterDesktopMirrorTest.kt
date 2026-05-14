@@ -2,6 +2,7 @@ package com.remodex.mobile.data
 
 import com.remodex.mobile.core.model.CodexMessageKind
 import com.remodex.mobile.core.model.CodexMessageRole
+import com.remodex.mobile.core.model.CodexPlanStepStatus
 import com.remodex.mobile.core.model.CodexThread
 import com.remodex.mobile.core.model.JSONValue
 import com.remodex.mobile.core.model.PendingApprovalDecision
@@ -154,6 +155,54 @@ class IncomingEventRouterDesktopMirrorTest {
             assertEquals("patch-1", thinking.itemId)
             assertEquals(true, thinking.isStreaming)
             assertEquals("thread-1" to "turn-1", lifecycle.last())
+        }
+
+    @Test
+    fun codexEventPlanUpdateEnvelope_addsStreamingPlanAndMarksTurnRunning() =
+        runTest {
+            val timeline = MessageTimelineStore()
+            val lifecycle = mutableListOf<Pair<String, String?>>()
+            val router =
+                newRouter(
+                    messageTimeline = timeline,
+                    onTurnLifecycle = { threadId, turnId -> lifecycle += threadId to turnId },
+                )
+
+            router.dispatchNotification(
+                method = "codex/event",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "msg" to
+                                JSONValue.Obj(
+                                    mapOf(
+                                        "type" to JSONValue.Str("plan_update"),
+                                        "threadId" to JSONValue.Str("thread-1"),
+                                        "turnId" to JSONValue.Str("turn-1"),
+                                        "explanation" to JSONValue.Str("Plan first"),
+                                        "plan" to
+                                            JSONValue.Arr(
+                                                listOf(
+                                                    JSONValue.Obj(
+                                                        mapOf(
+                                                            "step" to JSONValue.Str("Inspect"),
+                                                            "status" to JSONValue.Str("in_progress"),
+                                                        ),
+                                                    ),
+                                                ),
+                                            ),
+                                    ),
+                                ),
+                        ),
+                    ),
+            )
+
+            val plan = timeline.messagesByThread.value["thread-1"].orEmpty().single()
+            assertEquals(CodexMessageKind.plan, plan.kind)
+            assertEquals(true, plan.isStreaming)
+            assertEquals("Plan first", plan.planState?.explanation)
+            assertEquals(CodexPlanStepStatus.inProgress, plan.planState?.steps?.single()?.status)
+            assertEquals(listOf<Pair<String, String?>>("thread-1" to "turn-1"), lifecycle)
         }
 
     private fun newRouter(

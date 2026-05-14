@@ -34,13 +34,6 @@ class RelayUrlPolicyTest {
     }
 
     @Test
-    fun unsupportedHostedPhodexRelay_isRejected() {
-        assertNull(validateRelayUrl("wss://api.phodex.app/relay"))
-        assertNull(validateRelayUrl("ws://api.phodex.app/relay"))
-        assertNull(validateRelayUrl("https://api.phodex.app/relay"))
-    }
-
-    @Test
     fun publicSecureRelay_isAllowed() {
         val validation = assertNotNull(validateRelayUrl("wss://relay.example.com/relay"))
         assertEquals("https", validation.httpUrl.scheme)

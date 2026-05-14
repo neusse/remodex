@@ -71,7 +71,8 @@ internal fun List<CodexMessage>.toTimelineListItems(
     if (isEmpty()) return emptyList()
     val visibleMessages =
         filterNot { message ->
-            message.role == CodexMessageRole.system && message.kind == CodexMessageKind.thinking
+            message.role == CodexMessageRole.system &&
+                message.kind == CodexMessageKind.thinking
         }
     if (visibleMessages.isEmpty()) return emptyList()
     val out = ArrayList<TimelineListItem>(visibleMessages.size)

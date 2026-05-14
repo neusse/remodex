@@ -628,6 +628,9 @@ fun SidebarScreen(
             onStartBusyChange = { newChatBusy = it },
             onStartThread = { cwd -> startSidebarNewChat(repository, cwd) },
             initialFoldersCollapsed = projectPickerFoldersCollapsed,
+            threads = threads,
+            activeThreadId = activeId,
+            activeChatMetadata = activeChatMetadata,
             onThreadStarted = onThreadSelected,
         )
         SidebarNewWorktreeSheet(

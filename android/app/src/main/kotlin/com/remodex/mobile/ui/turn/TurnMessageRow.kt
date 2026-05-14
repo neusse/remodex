@@ -45,6 +45,7 @@ fun TurnMessageRow(
     modifier: Modifier = Modifier,
     commandExecutionDetails: CommandExecutionDetails? = null,
     onOpenFullMessage: ((CodexMessage) -> Unit)? = null,
+    onOpenPlanDetails: ((CodexMessage) -> Unit)? = null,
 ) {
     val isTimelineToolRow =
         message.role == CodexMessageRole.system &&
@@ -78,7 +79,7 @@ fun TurnMessageRow(
                     CodexMessageKind.fileChange -> Color.Transparent
                     CodexMessageKind.commandExecution -> Color.Transparent
                     CodexMessageKind.subagentAction -> Color.Transparent
-                    CodexMessageKind.plan -> colors.primaryContainer.copy(alpha = 0.22f)
+                    CodexMessageKind.plan -> Color.Transparent
                     CodexMessageKind.pendingApproval,
                     CodexMessageKind.userInputPrompt,
                     ->
@@ -219,6 +220,14 @@ fun TurnMessageRow(
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
+                    CodexMessageKind.plan -> {
+                        PlanMarkdownPreview(
+                            message = message,
+                            contentColor = onBubble,
+                            onSeeMore = onOpenPlanDetails?.let { open -> { open(message) } },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     else -> {
                         if (cappedBody.text.isNotEmpty()) {
                             if (shouldRenderMarkdownBody(message)) {
@@ -252,13 +261,6 @@ fun TurnMessageRow(
                 if (directiveOutcome.findings.isNotEmpty()) {
                     TurnCodeCommentDirectiveCards(
                         findings = directiveOutcome.findings,
-                        contentColor = onBubble,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                if (message.kind == CodexMessageKind.plan) {
-                    PlanMessageDetails(
-                        message = message,
                         contentColor = onBubble,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -356,9 +358,8 @@ private const val STREAMING_ASSISTANT_REVEAL_DISABLE_CHARS = 1_800
 private const val USER_MESSAGE_INLINE_MAX_CHARS = 1_200
 private const val USER_MESSAGE_INLINE_MAX_LINES = 12
 private const val ASSISTANT_MESSAGE_INLINE_MAX_LINES = 18
-private const val PLAN_MESSAGE_INLINE_MAX_CHARS = 1_200
-private const val PLAN_MESSAGE_INLINE_MAX_LINES = 12
-private const val PLAN_MESSAGE_MAX_VISIBLE_STEPS = 4
+private const val PLAN_MESSAGE_INLINE_MAX_CHARS = 720
+private const val PLAN_MESSAGE_INLINE_MAX_LINES = 8
 
 private data class CappedTimelineBody(
     val text: String,
@@ -402,45 +403,55 @@ private fun capTextForTimeline(
 }
 
 @Composable
-private fun PlanMessageDetails(
+private fun PlanMarkdownPreview(
     message: CodexMessage,
     contentColor: androidx.compose.ui.graphics.Color,
+    onSeeMore: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    val explanation = message.planState?.explanation?.trim().orEmpty()
-    val body = message.text.trim()
-    Column(
+    val lightChrome = isAgentLightChrome()
+    val accent =
+        if (lightChrome) {
+            Color(0xFFE4C25F)
+        } else {
+            MaterialTheme.colorScheme.tertiary
+        }
+    val markdown = planMarkdownFromMessage(message)
+    val preview = capTextForTimeline(markdown, maxChars = PLAN_MESSAGE_INLINE_MAX_CHARS, maxLines = PLAN_MESSAGE_INLINE_MAX_LINES)
+    Surface(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        shape = MaterialTheme.shapes.small,
+        color =
+            if (lightChrome) {
+                Color(0xFF5A4312).copy(alpha = 0.12f)
+            } else {
+                Color(0xFF5A4312).copy(alpha = 0.24f)
+            },
+        border = BorderStroke(0.5.dp, accent.copy(alpha = 0.34f)),
     ) {
-        if (explanation.isNotEmpty() && explanation != body) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
             Text(
-                text = explanation,
-                style = MaterialTheme.typography.bodySmall,
-                color = contentColor.copy(alpha = 0.82f),
+                text = stringResource(R.string.turn_timeline_kind_plan),
+                style = MaterialTheme.typography.labelMedium,
+                color = accent,
             )
-        }
-        val steps = message.planState?.steps.orEmpty()
-        steps.take(PLAN_MESSAGE_MAX_VISIBLE_STEPS).forEachIndexed { index, step ->
-            val statusPrefix =
-                when (step.status) {
-                    com.remodex.mobile.core.model.CodexPlanStepStatus.completed -> "[done]"
-                    com.remodex.mobile.core.model.CodexPlanStepStatus.inProgress -> "[doing]"
-                    com.remodex.mobile.core.model.CodexPlanStepStatus.pending -> "[todo]"
+            TurnRichMarkdownBody(
+                markdown = preview.text,
+                contentColor = contentColor,
+                modifier = Modifier.fillMaxWidth(),
+                keyPrefix = "${message.id}-plan-preview",
+            )
+            if ((preview.truncated || message.planState?.steps.orEmpty().size > 0) && onSeeMore != null) {
+                TextButton(onClick = onSeeMore) {
+                    Text(
+                        text = stringResource(R.string.turn_message_see_more),
+                        color = accent,
+                    )
                 }
-            Text(
-                text = "${index + 1}. $statusPrefix ${step.step}",
-                style = MaterialTheme.typography.bodySmall,
-                color = contentColor.copy(alpha = 0.9f),
-            )
-        }
-        val hiddenStepCount = steps.size - PLAN_MESSAGE_MAX_VISIBLE_STEPS
-        if (hiddenStepCount > 0) {
-            Text(
-                text = stringResource(R.string.turn_plan_more_steps, hiddenStepCount),
-                style = MaterialTheme.typography.labelSmall,
-                color = contentColor.copy(alpha = 0.72f),
-            )
+            }
         }
     }
 }
@@ -470,7 +481,7 @@ private fun systemKindLabel(message: CodexMessage): String? {
         CodexMessageKind.thinking -> null
         CodexMessageKind.fileChange -> null
         CodexMessageKind.commandExecution -> null
-        CodexMessageKind.plan -> stringResource(R.string.turn_timeline_kind_plan)
+        CodexMessageKind.plan -> null
         CodexMessageKind.subagentAction -> stringResource(R.string.turn_timeline_kind_subagent)
         CodexMessageKind.userInputPrompt -> stringResource(R.string.turn_timeline_kind_prompt)
         CodexMessageKind.pendingApproval -> stringResource(R.string.turn_timeline_kind_pending_approval)

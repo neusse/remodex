@@ -4,8 +4,6 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 private val supportedRelaySchemes = setOf("ws", "wss", "http", "https")
-private const val unsupportedHostedRelayHost = "api.phodex.app"
-private const val unsupportedHostedRelayPath = "/relay"
 
 data class RelayUrlValidation(
     val httpUrl: HttpUrl,
@@ -31,8 +29,6 @@ fun validateRelayUrl(
         }
     val httpUrl = httpish.toHttpUrlOrNull() ?: return null
     if (httpUrl.username.isNotEmpty() || httpUrl.password.isNotEmpty()) return null
-    if (isUnsupportedHostedRelay(httpUrl)) return null
-
     val cleartext = scheme == "ws" || scheme == "http"
     if (cleartext && !isLocalRelayHost(httpUrl.host)) return null
 
@@ -72,7 +68,3 @@ private fun isPrivateIpv4(host: String): Boolean {
         (octets[0] == 192 && octets[1] == 168) ||
         (octets[0] == 169 && octets[1] == 254)
 }
-
-private fun isUnsupportedHostedRelay(httpUrl: HttpUrl): Boolean =
-    httpUrl.host.equals(unsupportedHostedRelayHost, ignoreCase = true) &&
-        httpUrl.encodedPath.trimEnd('/') == unsupportedHostedRelayPath

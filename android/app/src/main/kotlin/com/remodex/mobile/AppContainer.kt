@@ -11,6 +11,7 @@ import com.remodex.mobile.core.persistence.CodexMessagePersistence
 import com.remodex.mobile.core.persistence.SessionPersistence
 import com.remodex.mobile.core.security.SecureStore
 import com.remodex.mobile.core.config.FeatureFlags
+import com.remodex.mobile.core.readRemodexAppVersionName
 import com.remodex.mobile.data.CodexRepository
 import com.remodex.mobile.services.CodexService
 import java.util.concurrent.TimeUnit
@@ -112,7 +113,7 @@ object AppContainer {
                 enabled = FeatureFlags.betaEngagementEnabled,
                 store = betaStore,
                 api = betaApi,
-                appVersionProvider = { BetaDeviceInfo.appVersionName(app) },
+                appVersionProvider = { readRemodexAppVersionName(app) },
                 deviceModelProvider = { BetaDeviceInfo.coarseDeviceModel() },
                 deviceKeyProvider = { BetaDeviceInfo.stableBetaDeviceKey(app) },
             )

@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -46,7 +45,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -160,7 +158,8 @@ fun TurnConversationPane(
     var lastError by remember(threadId) { mutableStateOf<String?>(null) }
     var draft by rememberSaveable(threadId) { mutableStateOf("") }
     var isPlanModeEnabled by rememberSaveable(threadId) { mutableStateOf(false) }
-    var expandedPlanAccessoryMessageId by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
+    var hiddenPlanAccessoryMessageIds by rememberSaveable(threadId) { mutableStateOf<List<String>>(emptyList()) }
+    var closedPlanAccessoryMessageIds by rememberSaveable(threadId) { mutableStateOf<List<String>>(emptyList()) }
     var composerAttachments by remember(threadId) { mutableStateOf<List<TurnComposerAttachment>>(emptyList()) }
     var mentionChips by remember(threadId) { mutableStateOf<List<ComposerMentionChipPayload>>(emptyList()) }
     var availableSkills by remember(threadId) { mutableStateOf<List<SkillAutocompleteSuggestion>>(emptyList()) }
@@ -177,6 +176,7 @@ fun TurnConversationPane(
     var showWorktreeHandoffSheet by remember(threadId) { mutableStateOf(false) }
     var forkingThread by remember(threadId) { mutableStateOf(false) }
     var showPlanDetailsSheet by remember(threadId) { mutableStateOf(false) }
+    var planDetailsMessage by remember(threadId) { mutableStateOf<com.remodex.mobile.core.model.CodexMessage?>(null) }
     var fullTimelineMessage by remember(threadId) { mutableStateOf<com.remodex.mobile.core.model.CodexMessage?>(null) }
     var reviewTargetName by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
     var reviewBaseBranch by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
@@ -659,7 +659,6 @@ fun TurnConversationPane(
         draft = ""
         composerAttachments = emptyList()
         mentionChips = emptyList()
-        expandedPlanAccessoryMessageId = null
     }
 
     LaunchedEffect(threadId, voicePhase) {
@@ -740,19 +739,18 @@ fun TurnConversationPane(
     val canLoadOlderRemoteHistory = historyPaginationState?.canLoadOlder == true
     val isLoadingOlderHistory = threadId in loadingOlderHistoryThreadIds
     val olderHistoryError = olderHistoryErrorByThread[threadId]
-    val pinnedPlanAccessoryMessage =
-        remember(messages) {
-            selectPinnedPlanAccessoryMessage(messages)
+    val visiblePlanAccessoryMessage =
+        remember(messages, hiddenPlanAccessoryMessageIds, closedPlanAccessoryMessageIds) {
+            selectPlanBarMessage(
+                messages = messages,
+                hiddenMessageIds = hiddenPlanAccessoryMessageIds,
+                closedMessageIds = closedPlanAccessoryMessageIds,
+            )
         }
-    val completedPlanAccessoryMessage =
-        remember(messages, pinnedPlanAccessoryMessage?.id) {
-            if (pinnedPlanAccessoryMessage == null) selectCompletedPlanAccessoryMessage(messages) else null
-        }
-    val visiblePlanAccessoryMessage = pinnedPlanAccessoryMessage ?: completedPlanAccessoryMessage
-    val expandedPlanAccessoryMessage =
-        visiblePlanAccessoryMessage?.takeIf { it.id == expandedPlanAccessoryMessageId }
-    LaunchedEffect(visiblePlanAccessoryMessage?.id) {
-        expandedPlanAccessoryMessageId = null
+    LaunchedEffect(messages) {
+        val planBarIds = messages.filter { it.shouldDisplayPlanBarAccessory() }.map { it.id }.toSet()
+        hiddenPlanAccessoryMessageIds = hiddenPlanAccessoryMessageIds.filter { it in planBarIds }
+        closedPlanAccessoryMessageIds = closedPlanAccessoryMessageIds.filter { it in planBarIds }
     }
     val fileAutocompleteCandidates =
         remember(messages) { com.remodex.mobile.ui.turn.extractThreadFileAutocompleteCandidates(messages) }
@@ -1260,6 +1258,11 @@ fun TurnConversationPane(
                     listState = listState,
                     commandExecutionDetailsByItemId = commandExecutionDetailsByItemId,
                     onOpenFullMessage = { fullTimelineMessage = it },
+                    onOpenPlanDetails = {
+                        planDetailsMessage = it
+                        showPlanDetailsSheet = true
+                        lastError = null
+                    },
                     isAssistantTurnActive = isThreadRunning,
                     activeTurnId = activeTurnId,
                     hiddenEarlierCount = hiddenEarlierCount,
@@ -1512,15 +1515,24 @@ fun TurnConversationPane(
             )
         }
         visiblePlanAccessoryMessage?.let { planMessage ->
-            TurnPlanAccessoryCard(
+            TurnPlanBar(
                 message = planMessage,
-                expanded = false,
-                onToggleExpanded = { expandedPlanAccessoryMessageId = planMessage.id },
-                canApplyPlan = !isThreadRunning && !sending,
-                onApplyPlan = { applyPlanToComposer() },
-                onOpenDetailsSheet = {
+                onOpenDetails = {
+                    planDetailsMessage = planMessage
                     showPlanDetailsSheet = true
                     lastError = null
+                },
+                onHide = {
+                    hiddenPlanAccessoryMessageIds =
+                        (hiddenPlanAccessoryMessageIds + planMessage.id).distinct()
+                    planDetailsMessage = null
+                    showPlanDetailsSheet = false
+                },
+                onClose = {
+                    closedPlanAccessoryMessageIds =
+                        (closedPlanAccessoryMessageIds + planMessage.id).distinct()
+                    planDetailsMessage = null
+                    showPlanDetailsSheet = false
                 },
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
             )
@@ -1982,26 +1994,6 @@ fun TurnConversationPane(
             },
         )
         }
-        expandedPlanAccessoryMessage?.let { planMessage ->
-            TurnPlanAccessoryCard(
-                message = planMessage,
-                expanded = true,
-                onToggleExpanded = { expandedPlanAccessoryMessageId = null },
-                canApplyPlan = !isThreadRunning && !sending,
-                onApplyPlan = { applyPlanToComposer() },
-                onOpenDetailsSheet = {
-                    showPlanDetailsSheet = true
-                    lastError = null
-                },
-                floating = true,
-                modifier =
-                    Modifier
-                        .align(Alignment.Center)
-                        .padding(horizontal = 18.dp, vertical = 24.dp)
-                        .widthIn(max = 560.dp)
-                        .zIndex(2f),
-            )
-        }
     }
     com.remodex.mobile.ui.turn.ForkThreadActionSheet(
         visible = showForkThreadSheet,
@@ -2054,13 +2046,17 @@ fun TurnConversationPane(
     )
     com.remodex.mobile.ui.turn.PlanDetailsActionSheet(
         visible = showPlanDetailsSheet,
-        message = visiblePlanAccessoryMessage,
+        message = planDetailsMessage ?: visiblePlanAccessoryMessage,
         canApplyPlan = !isThreadRunning && !sending,
-        onDismiss = { showPlanDetailsSheet = false },
+        onDismiss = {
+            showPlanDetailsSheet = false
+            planDetailsMessage = null
+        },
         onApplyPlan = {
             applyPlanToComposer()
             if (!hasComposerDraftContent) {
                 showPlanDetailsSheet = false
+                planDetailsMessage = null
             }
         },
     )

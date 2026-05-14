@@ -77,14 +77,6 @@ internal class MessageTimelineStore(
         saveMessages(map)
     }
 
-    private fun publishResolvedMessages(map: MutableMap<String, List<CodexMessage>>) {
-        publishMessages(
-            map.mapValues { (_, messages) ->
-                messages.map(::resolveSubagentMessageIdentities)
-            },
-        )
-    }
-
     suspend fun mergeThreadHistory(
         threadId: String,
         incoming: List<CodexMessage>,
@@ -1256,19 +1248,6 @@ internal class MessageTimelineStore(
                 message.kind == CodexMessageKind.chat &&
                 message.turnId == turnId &&
                 parseAssistantSubagentSummaryRefs(message.text).isNotEmpty()
-        }
-    }
-
-    private fun latestSubagentActionIndexForTurn(
-        list: List<CodexMessage>,
-        turnId: String?,
-    ): Int {
-        if (turnId.isNullOrBlank()) return -1
-        return list.indexOfLast { message ->
-            message.role == CodexMessageRole.system &&
-                message.kind == CodexMessageKind.subagentAction &&
-                message.turnId == turnId &&
-                message.subagentAction != null
         }
     }
 
