@@ -22,10 +22,17 @@ internal suspend fun CodexService.refreshThreadsInternal() {
                 }
             }
     val serverThreads = fetched.map { incoming -> applyAuthoritativeProjectPathToServerThread(incoming) }
+    val preserveLocalThreadIds =
+        (
+            setOfNotNull(_activeThreadId.value?.trim()?.takeIf { it.isNotEmpty() }) +
+                _runningTurnIdByThread.value.keys +
+                _protectedRunningFallbackThreadIds.value
+        ).filter { it !in locallyDeleted && it !in locallyArchived }.toSet()
     val merged =
-        mergeThreadListWithPersistedRenames(
+        mergeFetchedThreadsPreservingLocalRows(
             fetched = serverThreads,
             previous = _threads.value,
+            preserveLocalThreadIds = preserveLocalThreadIds,
             persistedRename = { tid -> persistedThreadRename(tid) },
         )
     publishThreads(merged)
@@ -34,4 +41,28 @@ internal suspend fun CodexService.refreshThreadsInternal() {
 internal fun CodexService.publishThreads(threads: List<CodexThread>) {
     _threads.value = threads
     sessionPersistence.saveCachedThreads(threads)
+}
+
+internal fun mergeFetchedThreadsPreservingLocalRows(
+    fetched: List<CodexThread>,
+    previous: List<CodexThread>,
+    preserveLocalThreadIds: Set<String>,
+    persistedRename: (String) -> String?,
+): List<CodexThread> {
+    val merged =
+        mergeThreadListWithPersistedRenames(
+            fetched = fetched,
+            previous = previous,
+            persistedRename = persistedRename,
+        )
+    val mergedIds = merged.mapTo(mutableSetOf()) { it.id }
+    val previousById = previous.associateBy { it.id }
+    val preserved =
+        preserveLocalThreadIds.mapNotNull { id ->
+            previousById[id]
+                ?.takeIf { it.syncState == CodexThreadSyncState.live && it.id !in mergedIds }
+                ?.let { thread -> thread.withPersistedThreadRename(persistedRename(thread.id)) }
+        }
+    if (preserved.isEmpty()) return merged
+    return sortThreadsForBridge(merged + preserved)
 }

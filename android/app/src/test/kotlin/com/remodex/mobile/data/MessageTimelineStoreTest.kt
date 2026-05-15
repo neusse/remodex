@@ -104,6 +104,55 @@ class MessageTimelineStoreTest {
         }
 
     @Test
+    fun appendAssistantDelta_withItemIdOnlyAbsorbsEmptyTurnPlaceholder() =
+        runTest {
+            val store = MessageTimelineStore()
+
+            store.ensureStreamingAssistantPlaceholder(
+                threadId = "thread-1",
+                turnId = "turn-1",
+            )
+            store.appendAssistantDelta(
+                threadId = "thread-1",
+                turnId = null,
+                itemId = "assistant-1",
+                delta = "live text",
+            )
+
+            val messages = store.messagesByThread.value["thread-1"].orEmpty()
+            assertEquals(1, messages.size)
+            assertEquals("live text", messages.single().text)
+            assertEquals("turn-1", messages.single().turnId)
+            assertEquals("assistant-1", messages.single().itemId)
+            assertEquals(true, messages.single().isStreaming)
+        }
+
+    @Test
+    fun appendAssistantDelta_preservesExistingTurnStreamWhenLaterDeltaAddsItemId() =
+        runTest {
+            val store = MessageTimelineStore()
+
+            store.appendAssistantDelta(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                itemId = null,
+                delta = "live",
+            )
+            store.appendAssistantDelta(
+                threadId = "thread-1",
+                turnId = null,
+                itemId = "assistant-1",
+                delta = " text",
+            )
+
+            val messages = store.messagesByThread.value["thread-1"].orEmpty()
+            assertEquals(1, messages.size)
+            assertEquals("live text", messages.single().text)
+            assertEquals("turn-1", messages.single().turnId)
+            assertEquals("assistant-1", messages.single().itemId)
+        }
+
+    @Test
     fun appendMirroredUser_mergesPhotoEchoWithDifferentAttachmentMetadata() =
         runTest {
             val store = MessageTimelineStore()
@@ -154,6 +203,30 @@ class MessageTimelineStoreTest {
             val messages = store.messagesByThread.value["thread-1"].orEmpty()
             assertEquals(2, messages.size)
             assertEquals(listOf("same answer", "same answer"), messages.map { it.text })
+        }
+
+    @Test
+    fun completeAssistantMessage_keepsDistinctSameTurnNoItemCompletions() =
+        runTest {
+            val store = MessageTimelineStore()
+
+            store.completeAssistantMessage(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                itemId = null,
+                text = "first answer",
+            )
+            store.completeAssistantMessage(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                itemId = null,
+                text = "second answer",
+            )
+
+            val messages = store.messagesByThread.value["thread-1"].orEmpty()
+            assertEquals(2, messages.size)
+            assertEquals(listOf("first answer", "second answer"), messages.map { it.text })
+            assertEquals(listOf("turn-1", "turn-1"), messages.map { it.turnId })
         }
 
     @Test

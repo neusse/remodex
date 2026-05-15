@@ -59,6 +59,63 @@ class HistoryMessageMergeTest {
     }
 
     @Test
+    fun merge_insertsLateDesktopUsersBeforeSameTurnAssistantRows() {
+        val existing =
+            listOf(
+                message(
+                    id = "assistant-1",
+                    role = CodexMessageRole.assistant,
+                    kind = CodexMessageKind.chat,
+                    text = "answer one",
+                    turnId = "turn-1",
+                    itemId = "assistant-item-1",
+                    isStreaming = false,
+                    createdAt = Instant.parse("2024-01-01T00:00:10Z"),
+                ),
+                message(
+                    id = "assistant-2",
+                    role = CodexMessageRole.assistant,
+                    kind = CodexMessageKind.chat,
+                    text = "answer two",
+                    turnId = "turn-2",
+                    itemId = "assistant-item-2",
+                    isStreaming = false,
+                    createdAt = Instant.parse("2024-01-01T00:00:20Z"),
+                ),
+            )
+        val incoming =
+            listOf(
+                message(
+                    id = "user-1",
+                    role = CodexMessageRole.user,
+                    kind = CodexMessageKind.chat,
+                    text = "prompt one",
+                    turnId = "turn-1",
+                    itemId = "user-item-1",
+                    isStreaming = false,
+                    createdAt = Instant.parse("2024-01-01T00:00:01Z"),
+                ),
+                message(
+                    id = "user-2",
+                    role = CodexMessageRole.user,
+                    kind = CodexMessageKind.chat,
+                    text = "prompt two",
+                    turnId = "turn-2",
+                    itemId = "user-item-2",
+                    isStreaming = false,
+                    createdAt = Instant.parse("2024-01-01T00:00:11Z"),
+                ),
+            )
+
+        val merged = HistoryMessageMerge.merge(existing, incoming)
+
+        assertEquals(
+            listOf("user-1", "assistant-1", "user-2", "assistant-2"),
+            merged.map { it.id },
+        )
+    }
+
+    @Test
     fun merge_movesConfirmedPhoneDuplicateToHistoryPosition() {
         val existing =
             listOf(

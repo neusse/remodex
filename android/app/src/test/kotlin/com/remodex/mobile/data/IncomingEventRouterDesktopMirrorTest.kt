@@ -116,6 +116,109 @@ class IncomingEventRouterDesktopMirrorTest {
         }
 
     @Test
+    fun desktopAgentDeltaWithoutTurnId_streamsAssistantMessageByItemId() =
+        runTest {
+            val timeline = MessageTimelineStore()
+            val lifecycle = mutableListOf<Pair<String, String?>>()
+            val router =
+                newRouter(
+                    messageTimeline = timeline,
+                    onTurnLifecycle = { threadId, turnId -> lifecycle += threadId to turnId },
+                )
+
+            router.dispatchNotification(
+                method = "turn/started",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "threadId" to JSONValue.Str("thread-1"),
+                            "turnId" to JSONValue.Str("turn-1"),
+                        ),
+                    ),
+            )
+            router.dispatchNotification(
+                method = "codex/event/agent_message_delta",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "threadId" to JSONValue.Str("thread-1"),
+                            "itemId" to JSONValue.Str("assistant-1"),
+                            "delta" to JSONValue.Str("live"),
+                        ),
+                    ),
+            )
+            router.dispatchNotification(
+                method = "codex/event/agent_message_delta",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "threadId" to JSONValue.Str("thread-1"),
+                            "itemId" to JSONValue.Str("assistant-1"),
+                            "delta" to JSONValue.Str(" text"),
+                        ),
+                    ),
+            )
+
+            val messages = timeline.messagesByThread.value["thread-1"].orEmpty()
+            assertEquals(1, messages.size)
+            assertEquals(CodexMessageRole.assistant, messages.single().role)
+            assertEquals("live text", messages.single().text)
+            assertEquals("turn-1", messages.single().turnId)
+            assertEquals("assistant-1", messages.single().itemId)
+            assertEquals(true, messages.single().isStreaming)
+            assertEquals("thread-1" to null, lifecycle.last())
+        }
+
+    @Test
+    fun itemCompletedUserWithNestedTurnId_insertsBeforeSameTurnAssistant() =
+        runTest {
+            val timeline = MessageTimelineStore()
+            val router = newRouter(messageTimeline = timeline)
+
+            router.dispatchNotification(
+                method = "item/completed",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "threadId" to JSONValue.Str("thread-1"),
+                            "item" to
+                                JSONValue.Obj(
+                                    mapOf(
+                                        "id" to JSONValue.Str("assistant-1"),
+                                        "type" to JSONValue.Str("agent_message"),
+                                        "turnId" to JSONValue.Str("turn-1"),
+                                        "text" to JSONValue.Str("answer one"),
+                                    ),
+                                ),
+                        ),
+                    ),
+            )
+            router.dispatchNotification(
+                method = "item/completed",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "threadId" to JSONValue.Str("thread-1"),
+                            "item" to
+                                JSONValue.Obj(
+                                    mapOf(
+                                        "id" to JSONValue.Str("user-1"),
+                                        "type" to JSONValue.Str("user_message"),
+                                        "turnId" to JSONValue.Str("turn-1"),
+                                        "text" to JSONValue.Str("prompt one"),
+                                    ),
+                                ),
+                        ),
+                    ),
+            )
+
+            val messages = timeline.messagesByThread.value["thread-1"].orEmpty()
+            assertEquals(listOf(CodexMessageRole.user, CodexMessageRole.assistant), messages.map { it.role })
+            assertEquals(listOf("prompt one", "answer one"), messages.map { it.text })
+            assertEquals(listOf("turn-1", "turn-1"), messages.map { it.turnId })
+        }
+
+    @Test
     fun desktopBackgroundEvent_addsLiveThinkingWorkRow() =
         runTest {
             val timeline = MessageTimelineStore()

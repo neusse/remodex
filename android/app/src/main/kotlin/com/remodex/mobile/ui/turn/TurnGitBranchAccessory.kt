@@ -49,6 +49,7 @@ import com.remodex.mobile.data.GitBranchDisplaySummary
 import com.remodex.mobile.data.GitBranchPickerRules
 import com.remodex.mobile.ui.theme.AgentLightColors
 import com.remodex.mobile.ui.theme.RemodexModalBottomSheet
+import com.remodex.mobile.ui.theme.RemodexPopupChrome
 import com.remodex.mobile.ui.theme.isAgentLightChrome
 
 /** Read-only Git branch / worktree snapshot for the active thread (J.7c), with optional picker. */
@@ -611,12 +612,7 @@ private fun LoadedGitBranchPill(
             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
         }
 
-    val outlineMod: Modifier =
-        if (chrome) {
-            Modifier.border(1.dp, MaterialTheme.colorScheme.outline, pillShape)
-        } else {
-            Modifier
-        }
+    val outlineMod: Modifier = Modifier.border(RemodexPopupChrome.borderStroke(), pillShape)
 
     val glyphTint =
         if (chrome) {

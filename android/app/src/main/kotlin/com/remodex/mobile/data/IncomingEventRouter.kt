@@ -489,8 +489,8 @@ internal class IncomingEventRouter(
 
     private fun handleAgentDelta(params: Map<String, JSONValue>?) {
         val delta = IncomingNotificationParsers.extractAssistantDelta(params) ?: return
-        val turnId = IncomingNotificationParsers.extractTurnId(params) ?: return
-        val threadId = resolveThreadId(params) ?: return
+        val turnId = IncomingNotificationParsers.extractTurnId(params)
+        val threadId = resolveThreadId(params) ?: IncomingNotificationParsers.extractThreadId(params) ?: return
         val itemId = IncomingNotificationParsers.extractItemId(params)
         val assistantPhase = IncomingNotificationParsers.extractAssistantPhase(params)
         markTurnActiveFromLiveEvent(threadId, turnId)

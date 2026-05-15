@@ -556,13 +556,15 @@ internal class MessageTimelineStore(
 
     suspend fun appendAssistantDelta(
         threadId: String,
-        turnId: String,
+        turnId: String?,
         itemId: String?,
         delta: String,
         assistantPhase: String? = null,
     ) {
         if (delta.isEmpty()) return
         mutex.withLock {
+            val resolvedTurnId = turnId?.trim()?.takeIf { it.isNotEmpty() }
+            val resolvedItemId = itemId?.trim()?.takeIf { it.isNotEmpty() }
             val map = _messagesByThread.value.toMutableMap()
             val list = map[threadId].orEmpty().toMutableList()
             val idx =
@@ -570,8 +572,11 @@ internal class MessageTimelineStore(
                     m.role == CodexMessageRole.assistant &&
                         m.kind == CodexMessageKind.chat &&
                         m.isStreaming &&
-                        (itemId != null && m.itemId == itemId ||
-                            (itemId == null && m.turnId == turnId))
+                        matchesAssistantDeltaCandidate(
+                            candidate = m,
+                            turnId = resolvedTurnId,
+                            itemId = resolvedItemId,
+                        )
             }
             if (idx >= 0) {
                 val m = list[idx]
@@ -580,8 +585,8 @@ internal class MessageTimelineStore(
                         text = m.text + delta,
                         assistantPhase = assistantPhase ?: m.assistantPhase,
                         isStreaming = true,
-                        turnId = turnId,
-                        itemId = itemId ?: m.itemId,
+                        turnId = resolvedTurnId ?: m.turnId,
+                        itemId = resolvedItemId ?: m.itemId,
                     )
             } else {
                 list.add(
@@ -592,8 +597,8 @@ internal class MessageTimelineStore(
                         assistantPhase = assistantPhase,
                         text = delta,
                         createdAt = Instant.now(),
-                        turnId = turnId,
-                        itemId = itemId,
+                        turnId = resolvedTurnId,
+                        itemId = resolvedItemId,
                         isStreaming = true,
                     ),
                 )
@@ -1339,8 +1344,31 @@ internal class MessageTimelineStore(
         if (itemId != null && candidateItemId == itemId) {
             return true
         }
-        if (turnId != null && candidateTurnId == turnId) {
-            return itemId == null || candidate.isStreaming || candidateItemId == null || candidateItemId == itemId
+        if (itemId != null && candidate.isStreaming && candidateItemId == null) {
+            return turnId == null || candidateTurnId == null || candidateTurnId == turnId
+        }
+        if (itemId == null && turnId != null && candidateTurnId == turnId) {
+            return candidate.isStreaming && candidateItemId == null
+        }
+        return false
+    }
+
+    private fun matchesAssistantDeltaCandidate(
+        candidate: CodexMessage,
+        turnId: String?,
+        itemId: String?,
+    ): Boolean {
+        val candidateItemId = candidate.itemId?.trim()?.takeIf { it.isNotEmpty() }
+        val candidateTurnId = candidate.turnId?.trim()?.takeIf { it.isNotEmpty() }
+        if (itemId != null && candidateItemId == itemId) return true
+        if (itemId != null && candidateItemId == null) {
+            return turnId == null || candidateTurnId == null || candidateTurnId == turnId
+        }
+        if (itemId == null && turnId != null) {
+            return candidateItemId == null && candidateTurnId == turnId
+        }
+        if (itemId == null && turnId == null) {
+            return candidateItemId == null && candidateTurnId == null
         }
         return false
     }

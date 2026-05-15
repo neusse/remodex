@@ -135,7 +135,38 @@ internal object HistoryMessageMerge {
         }
         val deduped = (merged + additions).dedupeCompatibleUserChats()
         if (additions.isEmpty() && deduped == existing) return existing
-        return deduped
+        return mergeLateAdditionsIntoTurnPositions(merged, additions)
+            .dedupeCompatibleUserChats()
+    }
+
+    private fun mergeLateAdditionsIntoTurnPositions(
+        existing: List<CodexMessage>,
+        additions: List<CodexMessage>,
+    ): List<CodexMessage> {
+        if (additions.isEmpty()) return existing
+        val out = existing.toMutableList()
+        additions.forEach { addition ->
+            val insertionIndex = turnAwareInsertionIndex(out, addition)
+            out.add(insertionIndex, addition)
+        }
+        return out
+    }
+
+    private fun turnAwareInsertionIndex(
+        messages: List<CodexMessage>,
+        incoming: CodexMessage,
+    ): Int {
+        val turnId = incoming.turnId?.trim()?.takeIf { it.isNotEmpty() } ?: return messages.size
+        if (incoming.role == CodexMessageRole.user && incoming.kind == CodexMessageKind.chat) {
+            val firstSameTurnNonUser =
+                messages.indexOfFirst { message ->
+                    message.turnId == turnId && message.role != CodexMessageRole.user
+                }
+            if (firstSameTurnNonUser >= 0) return firstSameTurnNonUser
+        }
+        val lastSameTurn =
+            messages.indexOfLast { message -> message.turnId == turnId }
+        return if (lastSameTurn >= 0) lastSameTurn + 1 else messages.size
     }
 
     private fun historyKey(m: CodexMessage): String {

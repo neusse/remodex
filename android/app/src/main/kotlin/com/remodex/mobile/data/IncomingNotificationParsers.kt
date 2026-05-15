@@ -110,9 +110,19 @@ internal object IncomingNotificationParsers {
         params["turn"]?.objectValue?.get("id")?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
         params["turnId"]?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
         params["turn_id"]?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        params["item"]?.objectValue?.let { item ->
+            item["turnId"]?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+            item["turn_id"]?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+            item["turn"]?.objectValue?.get("id")?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        }
         envelopeEvent(params)?.let { ev ->
             ev["turnId"]?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
             ev["turn"]?.objectValue?.get("id")?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+            ev["item"]?.objectValue?.let { item ->
+                item["turnId"]?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+                item["turn_id"]?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+                item["turn"]?.objectValue?.get("id")?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+            }
         }
         return null
     }
