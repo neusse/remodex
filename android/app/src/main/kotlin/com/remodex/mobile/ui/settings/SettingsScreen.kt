@@ -76,6 +76,7 @@ import com.remodex.mobile.data.LanguagePreferences
 import com.remodex.mobile.data.ThemePreferences
 import com.remodex.mobile.ui.shared.UsageStatusSummary
 import com.remodex.mobile.ui.theme.remodexScreenTopAppBarColors
+import com.remodex.mobile.terminal.TerminalWindowsSetupGuide
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -269,6 +270,8 @@ fun SettingsScreen(
                 singleLine = true,
             )
             SettingsNotificationSection(context = context)
+
+            TerminalWindowsSetupGuide()
 
             SettingsUsageRateLimitsSection(repository = repository)
 

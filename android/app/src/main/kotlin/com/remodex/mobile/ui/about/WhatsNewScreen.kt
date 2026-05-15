@@ -63,32 +63,16 @@ fun WhatsNewScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             LocalInfoSection(
-                title = stringResource(R.string.whats_new_beta_title),
-                body = stringResource(R.string.whats_new_item_beta),
+                title = stringResource(R.string.whats_new_added_title),
+                body = stringResource(R.string.whats_new_added_body),
             )
             LocalInfoSection(
-                title = stringResource(R.string.whats_new_scroll_title),
-                body = stringResource(R.string.whats_new_item_scroll),
+                title = stringResource(R.string.whats_new_improved_title),
+                body = stringResource(R.string.whats_new_improved_body),
             )
             LocalInfoSection(
-                title = stringResource(R.string.whats_new_streaming_title),
-                body = stringResource(R.string.whats_new_item_streaming),
-            )
-            LocalInfoSection(
-                title = stringResource(R.string.whats_new_repo_title),
-                body = stringResource(R.string.whats_new_item_repo),
-            )
-            LocalInfoSection(
-                title = stringResource(R.string.whats_new_bridge_title),
-                body = stringResource(R.string.whats_new_item_bridge),
-            )
-            LocalInfoSection(
-                title = stringResource(R.string.whats_new_composer_git_title),
-                body = stringResource(R.string.whats_new_composer_git_item),
-            )
-            LocalInfoSection(
-                title = stringResource(R.string.whats_new_smart_scroll_title),
-                body = stringResource(R.string.whats_new_smart_scroll_item),
+                title = stringResource(R.string.whats_new_fixed_title),
+                body = stringResource(R.string.whats_new_fixed_body),
             )
         }
     }

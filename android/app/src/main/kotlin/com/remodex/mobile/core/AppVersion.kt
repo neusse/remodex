@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 
-private const val REMODEX_APP_VERSION_FALLBACK = "0.1.3"
+private const val REMODEX_APP_VERSION_FALLBACK = "0.1.5"
 
 fun readRemodexAppVersionName(context: Context): String =
     try {

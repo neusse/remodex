@@ -3,7 +3,6 @@ package com.remodex.mobile.terminal
 import java.security.MessageDigest
 import java.security.PublicKey
 import java.util.Base64
-import java.util.concurrent.ConcurrentHashMap
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
 
 class UnknownTerminalHostKeyException(
@@ -14,34 +13,14 @@ class UnknownTerminalHostKeyException(
 ) : RuntimeException("Trust the SSH host key before connecting to $host:$port.")
 
 class ChangedTerminalHostKeyException(
-    host: String,
-    port: Int,
+    val host: String,
+    val port: Int,
+    val fingerprint: String,
+    val encodedHostKey: String,
 ) : RuntimeException("The SSH host key changed for $host:$port. Verify the host before reconnecting.")
 
-class TerminalKnownHostStore {
-    private val trustedFingerprints = ConcurrentHashMap<String, String>()
-
-    fun trust(
-        host: String,
-        port: Int,
-        fingerprint: String,
-    ) {
-        trustedFingerprints[key(host, port)] = fingerprint
-    }
-
-    fun trustedFingerprint(
-        host: String,
-        port: Int,
-    ): String? = trustedFingerprints[key(host, port)]
-
-    private fun key(
-        host: String,
-        port: Int,
-    ): String = "${host.trim().lowercase()}:$port"
-}
-
 class TerminalKnownHostVerifier(
-    private val store: TerminalKnownHostStore,
+    private val store: TerminalTrustedHostRepository,
 ) : HostKeyVerifier {
     override fun findExistingAlgorithms(
         hostname: String,
@@ -64,7 +43,12 @@ class TerminalKnownHostVerifier(
             )
         }
         if (trusted != fingerprint) {
-            throw ChangedTerminalHostKeyException(hostname, port)
+            throw ChangedTerminalHostKeyException(
+                host = hostname,
+                port = port,
+                fingerprint = fingerprint,
+                encodedHostKey = Base64.getEncoder().encodeToString(key.encoded),
+            )
         }
         return true
     }

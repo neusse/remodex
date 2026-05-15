@@ -8,8 +8,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,6 +28,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.termux.terminal.TerminalEmulator
 import com.termux.terminal.TerminalOutput
 import com.termux.terminal.TerminalSession
@@ -34,7 +39,8 @@ import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import kotlinx.coroutines.flow.Flow
 
-private const val TERMINAL_TEXT_SIZE_DP = 26
+private const val TERMINAL_TEXT_SIZE_DP = 10
+private val TERMINAL_CONTENT_PADDING = 8.dp
 
 @Composable
 fun TermuxTerminalSurface(
@@ -46,10 +52,26 @@ fun TermuxTerminalSurface(
     val focusRequester = remember { FocusRequester() }
     val terminalBridge = remember { TermuxTerminalBridge(onInput = onInput) }
     val density = LocalDensity.current
+    val terminalTextSizePx = with(density) { TERMINAL_TEXT_SIZE_DP.dp.toPx().toInt() }
     val inputValue = remember { mutableStateOf("") }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val lastSize = remember { mutableStateOf<TerminalSize?>(null) }
 
     LaunchedEffect(output, terminalBridge) {
         output.collect { bytes -> terminalBridge.feed(bytes) }
+    }
+
+    DisposableEffect(lifecycleOwner, terminalBridge) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    lastSize.value?.let { terminalBridge.resize(it) }
+                    terminalBridge.refresh()
+                    focusRequester.requestFocus()
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Box(
@@ -58,27 +80,30 @@ fun TermuxTerminalSurface(
                 .background(Color(0xFF050505))
                 .clickable { focusRequester.requestFocus() }
                 .onSizeChanged { size ->
-                    val fontPx = with(density) { TERMINAL_TEXT_SIZE_DP.dp.toPx() }
+                    val horizontalPaddingPx = with(density) { TERMINAL_CONTENT_PADDING.toPx() * 2 }
+                    val verticalPaddingPx = with(density) { TERMINAL_CONTENT_PADDING.toPx() * 2 }
+                    val contentWidth = (size.width - horizontalPaddingPx).coerceAtLeast(1f)
+                    val contentHeight = (size.height - verticalPaddingPx).coerceAtLeast(1f)
+                    val fontPx = terminalTextSizePx.toFloat()
                     val cellWidth = (fontPx * 0.62f).coerceAtLeast(1f)
                     val cellHeight = (fontPx * 1.35f).coerceAtLeast(1f)
-                    onResize(
+                    val terminalSize =
                         TerminalSize(
-                            cols = (size.width / cellWidth).toInt().coerceAtLeast(20),
-                            rows = (size.height / cellHeight).toInt().coerceAtLeast(5),
-                        ),
-                    )
-                    terminalBridge.resize(
-                        TerminalSize(
-                            cols = (size.width / cellWidth).toInt().coerceAtLeast(20),
-                            rows = (size.height / cellHeight).toInt().coerceAtLeast(5),
-                        ),
-                    )
+                            cols = (contentWidth / cellWidth).toInt().coerceAtLeast(20),
+                            rows = (contentHeight / cellHeight).toInt().coerceAtLeast(5),
+                        )
+                    lastSize.value = terminalSize
+                    onResize(terminalSize)
+                    terminalBridge.resize(terminalSize)
                 },
     ) {
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(TERMINAL_CONTENT_PADDING),
             factory = { context ->
-                terminalBridge.createView(context)
+                terminalBridge.createView(context, terminalTextSizePx)
             },
         )
         BasicTextField(
@@ -134,10 +159,13 @@ private class TermuxTerminalBridge(
             sessionClient,
         )
 
-    fun createView(context: Context): TerminalView =
+    fun createView(
+        context: Context,
+        textSizePx: Int,
+    ): TerminalView =
         TerminalView(context, null).also { terminalView ->
             terminalView.setTerminalViewClient(viewClient)
-            terminalView.setTextSize(TERMINAL_TEXT_SIZE_DP)
+            terminalView.setTextSize(textSizePx)
             terminalView.setTypeface(Typeface.MONOSPACE)
             terminalView.mEmulator = emulator
             terminalView.onScreenUpdated()
@@ -154,6 +182,11 @@ private class TermuxTerminalBridge(
         val normalized = size.normalized
         emulator.resize(normalized.cols, normalized.rows)
         view?.onScreenUpdated()
+    }
+
+    fun refresh() {
+        view?.onScreenUpdated()
+        view?.invalidate()
     }
 }
 

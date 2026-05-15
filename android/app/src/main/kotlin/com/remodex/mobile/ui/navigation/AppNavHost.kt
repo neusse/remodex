@@ -15,7 +15,7 @@ import com.remodex.mobile.ui.home.HomeMainContent
 import com.remodex.mobile.ui.archived.ArchivedChatsScreen
 import com.remodex.mobile.ui.beta.TesterHqScreen
 import com.remodex.mobile.ui.settings.SettingsScreen
-import com.remodex.mobile.terminal.TerminalSpikeRoute
+import com.remodex.mobile.terminal.TerminalRoute
 
 @Composable
 fun AppNavHost(
@@ -74,10 +74,8 @@ fun AppNavHost(
                 onNavigateBack = { navController.popBackStack() },
             )
         }
-        if (FeatureFlags.nativeTerminalSpikeEnabled) {
-            composable(AppRoutes.TerminalSpike) {
-                TerminalSpikeRoute(onNavigateBack = { navController.popBackStack() })
-            }
+        composable(AppRoutes.Terminal) {
+            TerminalRoute(onNavigateBack = { navController.popBackStack() })
         }
     }
 }

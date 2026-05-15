@@ -10,7 +10,7 @@ class TerminalKnownHostVerifierTest {
     @Test
     fun firstSeenHostRequestsTrust() {
         val key = testPublicKey()
-        val verifier = TerminalKnownHostVerifier(TerminalKnownHostStore())
+        val verifier = TerminalKnownHostVerifier(TerminalTrustedHostRepository(InMemoryTerminalStore()))
 
         val error =
             assertFailsWith<UnknownTerminalHostKeyException> {
@@ -25,7 +25,7 @@ class TerminalKnownHostVerifierTest {
     @Test
     fun trustedHostKeyIsAccepted() {
         val key = testPublicKey()
-        val store = TerminalKnownHostStore()
+        val store = TerminalTrustedHostRepository(InMemoryTerminalStore())
         store.trust("devbox.local", 22, TerminalHostKeyFingerprint.sha256(key))
 
         assertTrue(TerminalKnownHostVerifier(store).verify("devbox.local", 22, key))
@@ -35,7 +35,7 @@ class TerminalKnownHostVerifierTest {
     fun changedHostKeyIsBlocked() {
         val firstKey = testPublicKey()
         val changedKey = testPublicKey()
-        val store = TerminalKnownHostStore()
+        val store = TerminalTrustedHostRepository(InMemoryTerminalStore())
         store.trust("devbox.local", 22, TerminalHostKeyFingerprint.sha256(firstKey))
 
         assertFailsWith<ChangedTerminalHostKeyException> {

@@ -19,12 +19,14 @@ import net.schmizz.sshj.common.Factory
 import net.schmizz.sshj.common.SecurityUtils
 import net.schmizz.sshj.connection.channel.direct.PTYMode
 import net.schmizz.sshj.connection.channel.direct.Session
+import net.schmizz.sshj.transport.TransportException
 import net.schmizz.sshj.transport.kex.KeyExchange
+import net.schmizz.sshj.userauth.UserAuthException
 import net.schmizz.sshj.userauth.password.PasswordFinder
 import net.schmizz.sshj.userauth.password.Resource
 
 class SshjTerminalClient(
-    private val knownHostStore: TerminalKnownHostStore,
+    private val knownHostStore: TerminalTrustedHostRepository,
 ) : TerminalClient {
     private val readerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -45,6 +47,12 @@ class SshjTerminalClient(
         config: TerminalConnectionConfig,
         initialSize: TerminalSize,
     ) {
+        if (!config.allowUnencryptedKey && !TerminalPrivateKeyInspector.isEncrypted(config.privateKey)) {
+            throw UnencryptedTerminalPrivateKeyException()
+        }
+        if (!config.allowUnencryptedKey && config.passphrase.isBlank()) {
+            throw MissingTerminalPassphraseException()
+        }
         disconnect()
         val size = initialSize.normalized
         emit(TerminalEvent.StatusChanged(TerminalStatus.Connecting))
@@ -52,14 +60,29 @@ class SshjTerminalClient(
             withContext(Dispatchers.IO) {
                 val client = SSHClient(androidCompatibleSshConfig())
                 client.addHostKeyVerifier(TerminalKnownHostVerifier(knownHostStore))
-                client.connect(config.host.trim(), config.port)
+                runCatching {
+                    client.connect(config.host.trim(), config.port)
+                }.getOrElse { error ->
+                    throw TerminalNetworkConnectionException(error)
+                }
                 val keyProvider =
-                    client.loadKeys(
-                        config.privateKey.normalizedPem(),
-                        null,
-                        config.passphrase.toPasswordFinderOrNull(),
-                    )
-                client.authPublickey(config.username.trim(), keyProvider)
+                    runCatching {
+                        client.loadKeys(
+                            config.privateKey.normalizedPem(),
+                            null,
+                            config.passphrase.toPasswordFinderOrNull(),
+                        )
+                    }.getOrElse { error ->
+                        throw TerminalPrivateKeyDecryptionException(error)
+                    }
+                runCatching {
+                    client.authPublickey(config.username.trim(), keyProvider)
+                }.getOrElse { error ->
+                    if (error.findCause<UserAuthException>() != null || error.findCause<TransportException>() != null) {
+                        throw TerminalPublicKeyAuthenticationException(config.username.trim(), error)
+                    }
+                    throw error
+                }
 
                 val sshSession = client.startSession()
                 sshSession.allocatePTY("xterm-256color", size.cols, size.rows, 0, 0, emptyMap<PTYMode, Int>())
@@ -78,6 +101,11 @@ class SshjTerminalClient(
             if (unknownHostKey != null) {
                 disconnect()
                 throw unknownHostKey
+            }
+            val changedHostKey = e.findCause<ChangedTerminalHostKeyException>()
+            if (changedHostKey != null) {
+                disconnect()
+                throw changedHostKey
             }
             disconnect()
             emit(TerminalEvent.StatusChanged(TerminalStatus.Error))

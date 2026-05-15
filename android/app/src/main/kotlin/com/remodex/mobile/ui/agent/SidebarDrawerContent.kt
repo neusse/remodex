@@ -235,17 +235,12 @@ fun SidebarDrawerContent(
                     } else {
                         null
                     },
-                onTerminal =
-                    if (FeatureFlags.nativeTerminalSpikeEnabled) {
-                        {
-                            drawerScope.launch {
-                                closeDrawer()
-                                navController.navigate(AppRoutes.TerminalSpike)
-                            }
-                        }
-                    } else {
-                        null
-                    },
+                onTerminal = {
+                    drawerScope.launch {
+                        closeDrawer()
+                        navController.navigate(AppRoutes.Terminal)
+                    }
+                },
                 onScan = {
                     drawerScope.launch {
                         closeDrawer()

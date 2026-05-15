@@ -14,6 +14,9 @@ import com.remodex.mobile.core.config.FeatureFlags
 import com.remodex.mobile.core.readRemodexAppVersionName
 import com.remodex.mobile.data.CodexRepository
 import com.remodex.mobile.services.CodexService
+import com.remodex.mobile.terminal.SecureTerminalKeyValueStore
+import com.remodex.mobile.terminal.TerminalProfileRepository
+import com.remodex.mobile.terminal.TerminalTrustedHostRepository
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
 
@@ -66,10 +69,19 @@ object AppContainer {
     lateinit var betaEngagementRepository: BetaEngagementRepository
         private set
 
+    lateinit var terminalProfileRepository: TerminalProfileRepository
+        private set
+
+    lateinit var terminalTrustedHostRepository: TerminalTrustedHostRepository
+        private set
+
     fun initialize(context: Context) {
         val app = context.applicationContext
         appContext = app
         secureStore = SecureStore(app)
+        val terminalStore = SecureTerminalKeyValueStore(secureStore)
+        terminalProfileRepository = TerminalProfileRepository(terminalStore)
+        terminalTrustedHostRepository = TerminalTrustedHostRepository(terminalStore)
         messagePersistence = CodexMessagePersistence(app, secureStore)
         aiChangeSetPersistence = AIChangeSetPersistence(app)
         sessionPersistence = SessionPersistence(secureStore, app)
