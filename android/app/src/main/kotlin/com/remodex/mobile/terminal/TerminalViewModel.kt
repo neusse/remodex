@@ -85,9 +85,9 @@ class TerminalViewModel(
     fun updateEditorPrivateKey(value: String) = updateEditor { it.copy(privateKey = value) }
     fun updateEditorAllowUnencryptedKey(value: Boolean) = updateEditor { it.copy(allowUnencryptedKey = value) }
 
-    fun saveEditor() {
-        val editor = _state.value.editor ?: return
-        profileRepository.saveProfile(editor)
+    fun saveEditor(): Boolean {
+        val editor = _state.value.editor ?: return false
+        return profileRepository.saveProfile(editor)
             .onSuccess {
                 _state.update {
                     it.copy(
@@ -100,7 +100,7 @@ class TerminalViewModel(
             }
             .onFailure { error ->
                 _state.update { it.copy(editorErrorMessage = error.userFacingMessage()) }
-            }
+            }.isSuccess
     }
 
     fun deleteProfile(id: String) {
