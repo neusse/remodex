@@ -16,6 +16,7 @@ const {
   applyConversationStateChange,
   createDesktopIpcActionFollower,
   desktopFollowerPayloadForResponse,
+  projectDesktopAssistantDeltaNotifications,
   projectPendingDesktopActions,
   seedConversationStateFromThreadRead,
 } = require("../src/desktop-ipc-action-follower");
@@ -335,6 +336,84 @@ test("seeds conversation state from thread/read responses for IPC recovery", () 
     {
       requests: [{ id: "req-1" }],
     }
+  );
+});
+
+test("projects only appended assistant text as live app-server deltas", () => {
+  const previousState = {
+    turns: [{
+      id: "turn-1",
+      items: [{
+        id: "assistant-1",
+        type: "assistant_message",
+        text: "Hello",
+      }],
+    }],
+  };
+  const nextState = {
+    turns: [{
+      id: "turn-1",
+      items: [{
+        id: "assistant-1",
+        type: "assistant_message",
+        text: "Hello world",
+      }],
+    }],
+  };
+
+  assert.deepEqual(
+    projectDesktopAssistantDeltaNotifications("thread-1", previousState, nextState),
+    [{
+      method: "item/agentMessage/delta",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        itemId: "assistant-1",
+        delta: " world",
+      },
+    }]
+  );
+});
+
+test("does not replay unchanged or rewritten assistant text as live deltas", () => {
+  const previousState = {
+    turns: [{
+      id: "turn-1",
+      items: [
+        {
+          id: "assistant-same",
+          type: "assistant_message",
+          text: "same",
+        },
+        {
+          id: "assistant-rewrite",
+          type: "assistant_message",
+          text: "draft",
+        },
+      ],
+    }],
+  };
+  const nextState = {
+    turns: [{
+      id: "turn-1",
+      items: [
+        {
+          id: "assistant-same",
+          type: "assistant_message",
+          text: "same",
+        },
+        {
+          id: "assistant-rewrite",
+          type: "assistant_message",
+          text: "final",
+        },
+      ],
+    }],
+  };
+
+  assert.deepEqual(
+    projectDesktopAssistantDeltaNotifications("thread-1", previousState, nextState),
+    []
   );
 });
 
@@ -886,6 +965,97 @@ test("desktop IPC follower forwards pending actions and routes iOS replies back 
         q1: { answers: ["Yes"] },
       },
     },
+  });
+});
+
+test("desktop IPC follower mirrors live assistant text growth from desktop state", async (t) => {
+  const { tempDir, socketPath } = createIpcTestSocket("remodex-ipc-assistant-delta-");
+  let serverSocket = null;
+
+  const server = net.createServer((socket) => {
+    serverSocket = socket;
+    attachFrameReader(socket, (frame) => {
+      if (frame.method === "initialize") {
+        writeFrame(socket, {
+          type: "response",
+          requestId: frame.requestId,
+          resultType: "success",
+          method: "initialize",
+          handledByClientId: "desktop",
+          result: { clientId: "remodex-test" },
+        });
+      }
+    });
+  });
+  await new Promise((resolve) => server.listen(socketPath, resolve));
+  t.after(() => {
+    server.close();
+    serverSocket?.destroy();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const outbound = [];
+  const follower = createDesktopIpcActionFollower({
+    socketPath,
+    sendApplicationResponse(message) {
+      outbound.push(JSON.parse(message));
+    },
+    requestTimeoutMs: 500,
+  });
+  t.after(() => follower.stopAll());
+
+  follower.observeInbound(JSON.stringify({
+    method: "thread/resume",
+    params: { threadId: "thread-live-delta" },
+  }));
+  await waitFor(() => serverSocket);
+  writeFrame(serverSocket, {
+    type: "broadcast",
+    method: "thread-stream-state-changed",
+    sourceClientId: "desktop",
+    version: 5,
+    params: {
+      conversationId: "thread-live-delta",
+      change: {
+        type: "snapshot",
+        conversationState: {
+          turns: [{
+            id: "turn-live-delta",
+            items: [{
+              id: "assistant-live-delta",
+              type: "assistant_message",
+              text: "Hello",
+            }],
+          }],
+        },
+      },
+    },
+  });
+  writeFrame(serverSocket, {
+    type: "broadcast",
+    method: "thread-stream-state-changed",
+    sourceClientId: "desktop",
+    version: 5,
+    params: {
+      conversationId: "thread-live-delta",
+      change: {
+        type: "patches",
+        patches: [{
+          op: "replace",
+          path: ["turns", 0, "items", 0, "text"],
+          value: "Hello world",
+        }],
+      },
+    },
+  });
+
+  await waitFor(() => outbound.find((message) => message.method === "item/agentMessage/delta"));
+  const deltaMessage = outbound.find((message) => message.method === "item/agentMessage/delta");
+  assert.deepEqual(deltaMessage.params, {
+    threadId: "thread-live-delta",
+    turnId: "turn-live-delta",
+    itemId: "assistant-live-delta",
+    delta: " world",
   });
 });
 

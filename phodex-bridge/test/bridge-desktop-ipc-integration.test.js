@@ -169,6 +169,135 @@ test("bridge forwards desktop IPC actions to the phone and routes replies back t
   assert.equal(resolvedMessage.params.threadId, "thread-ipc");
 });
 
+test("bridge forwards live desktop assistant deltas to the phone", async (t) => {
+  const { tempDir, socketPath: ipcSocketPath } = createIpcTestSocket("remodex-bridge-ipc-delta-");
+  const relayServer = new WebSocket.Server({ port: 0 });
+  const relayMessages = [];
+  let relaySocket = null;
+  let ipcServerSocket = null;
+  let fakeCodex = null;
+
+  await new Promise((resolve) => relayServer.once("listening", resolve));
+  relayServer.on("connection", (socket) => {
+    relaySocket = socket;
+    socket.on("message", (data) => {
+      const parsed = safeParseJSON(data.toString("utf8"));
+      if (parsed) {
+        relayMessages.push(parsed);
+      }
+    });
+  });
+
+  const ipcServer = net.createServer((socket) => {
+    ipcServerSocket = socket;
+    attachFrameReader(socket, (frame) => {
+      if (frame.method === "initialize") {
+        writeFrame(socket, {
+          type: "response",
+          requestId: frame.requestId,
+          resultType: "success",
+          method: "initialize",
+          handledByClientId: "desktop",
+          result: { clientId: "desktop-test" },
+        });
+      }
+    });
+  });
+  await new Promise((resolve) => ipcServer.listen(ipcSocketPath, resolve));
+
+  const { startBridge } = loadBridgeWithTestDoubles({
+    createCodexTransportImpl() {
+      fakeCodex = createFakeCodexTransport();
+      return fakeCodex;
+    },
+  });
+
+  t.after(() => {
+    fakeCodex?.emitClose();
+    relaySocket?.close();
+    relayServer.close();
+    ipcServer.close();
+    ipcServerSocket?.destroy();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  startBridge({
+    printPairingQr: false,
+    config: {
+      relayUrl: `ws://127.0.0.1:${relayServer.address().port}`,
+      pushServiceUrl: "",
+      pushPreviewMaxChars: 160,
+      refreshEnabled: false,
+      refreshDebounceMs: 1,
+      keepMacAwakeEnabled: false,
+      codexEndpoint: "",
+      refreshCommand: "",
+      codexBundleId: "",
+      codexAppPath: "",
+      desktopIpcSocketPath: ipcSocketPath,
+    },
+  });
+
+  await waitFor(() => relaySocket && relaySocket.readyState === WebSocket.OPEN);
+  relaySocket.send(JSON.stringify({
+    id: "resume-from-phone-delta",
+    method: "thread/resume",
+    params: { threadId: "thread-ipc-delta" },
+  }));
+
+  await waitFor(() => ipcServerSocket, 2_000);
+  writeFrame(ipcServerSocket, {
+    type: "broadcast",
+    method: "thread-stream-state-changed",
+    sourceClientId: "desktop",
+    version: 1,
+    params: {
+      conversationId: "thread-ipc-delta",
+      change: {
+        type: "snapshot",
+        conversationState: {
+          turns: [{
+            id: "turn-ipc-delta",
+            items: [{
+              id: "assistant-ipc-delta",
+              type: "assistant_message",
+              text: "Hello",
+            }],
+          }],
+        },
+      },
+    },
+  });
+  writeFrame(ipcServerSocket, {
+    type: "broadcast",
+    method: "thread-stream-state-changed",
+    sourceClientId: "desktop",
+    version: 1,
+    params: {
+      conversationId: "thread-ipc-delta",
+      change: {
+        type: "patches",
+        patches: [{
+          op: "replace",
+          path: ["turns", 0, "items", 0, "text"],
+          value: "Hello world",
+        }],
+      },
+    },
+  });
+
+  const deltaMessage = await waitForMessage(
+    relayMessages,
+    (message) => message.method === "item/agentMessage/delta"
+  );
+  assert.deepEqual(deltaMessage.params, {
+    threadId: "thread-ipc-delta",
+    turnId: "turn-ipc-delta",
+    itemId: "assistant-ipc-delta",
+    delta: " world",
+  });
+});
+
 // Loads bridge.js with plaintext test transports while leaving the production module untouched.
 function loadBridgeWithTestDoubles({ createCodexTransportImpl }) {
   const bridgePath = require.resolve("../src/bridge");
