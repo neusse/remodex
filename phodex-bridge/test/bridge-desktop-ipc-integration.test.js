@@ -70,7 +70,7 @@ test("bridge forwards desktop IPC actions to the phone and routes replies back t
   });
 
   t.after(() => {
-    fakeCodex?.emitClose();
+    closeFakeCodexForTest(fakeCodex);
     relaySocket?.close();
     relayServer.close();
     ipcServer.close();
@@ -213,7 +213,7 @@ test("bridge forwards live desktop assistant deltas to the phone", async (t) => 
   });
 
   t.after(() => {
-    fakeCodex?.emitClose();
+    closeFakeCodexForTest(fakeCodex);
     relaySocket?.close();
     relayServer.close();
     ipcServer.close();
@@ -405,6 +405,23 @@ function createFakeCodexTransport() {
       listeners.close?.();
     },
   };
+}
+
+function closeFakeCodexForTest(fakeCodex) {
+  const previousExitCode = process.exitCode;
+  const originalError = console.error;
+  console.error = (message, ...args) => {
+    if (String(message).includes("Codex transport closed unexpectedly.")) {
+      return;
+    }
+    originalError(message, ...args);
+  };
+  try {
+    fakeCodex?.emitClose();
+  } finally {
+    console.error = originalError;
+    process.exitCode = previousExitCode;
+  }
 }
 
 function attachFrameReader(socket, onFrame) {

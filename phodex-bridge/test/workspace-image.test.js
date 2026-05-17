@@ -43,6 +43,16 @@ function writeFakeSips(fakeBinDir, scriptContent) {
   }
 }
 
+function writeFakePowerShell(fakeBinDir, scriptContent) {
+  if (IS_WINDOWS_HOST) {
+    return;
+  }
+
+  const scriptPath = path.join(fakeBinDir, "powershell.exe");
+  fs.writeFileSync(scriptPath, scriptContent);
+  fs.chmodSync(scriptPath, 0o755);
+}
+
 test("workspace/readImage returns base64 image data for a file inside cwd", async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "remodex-image-"));
   execFileSync("git", ["init"], { cwd: tempDir, stdio: "ignore" });
@@ -128,6 +138,37 @@ test("workspace/readImage accepts bounded preview reads", async () => {
 test("workspace/readImage ignores client platform fields for non-mac preview decisions", async (t) => {
   useProcessPlatform(t, "win32");
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "remodex-image-"));
+  const fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), "remodex-fake-powershell-"));
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${fakeBinDir}${path.delimiter}${previousPath || ""}`;
+  t.after(() => {
+    if (previousPath == null) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = previousPath;
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(fakeBinDir, { recursive: true, force: true });
+  });
+
+  writeFakePowerShell(
+    fakeBinDir,
+    `#!/usr/bin/env node
+const fs = require("fs");
+const fileIndex = process.argv.indexOf("-File");
+if (fileIndex === -1) {
+  throw new Error("Expected -File invocation");
+}
+const inputPath = process.argv[fileIndex + 2];
+const outputPath = process.argv[fileIndex + 3];
+const maxDimension = Number(process.argv[fileIndex + 4]);
+if (!inputPath || !outputPath || !Number.isFinite(maxDimension)) {
+  throw new Error("Expected -File <script> <input> <output> <maxDimension>");
+}
+fs.copyFileSync(inputPath, outputPath);
+`
+  );
+
   execFileSync("git", ["init"], { cwd: tempDir, stdio: "ignore" });
   const imagePath = path.join(tempDir, "preview.png");
   fs.writeFileSync(imagePath, validOnePixelPNG);
