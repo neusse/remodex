@@ -53,6 +53,9 @@ These have both backend route support and Android app hooks.
 | `scroll-long-thread` | auto-live | `scroll_long_thread_checked` | 25 | Test long-thread scrolling | Open a long conversation, scroll up and down, and verify the composer and timeline stay usable. |
 | `file-change-card` | auto-live | `file_change_card_checked` | 30 | Inspect file-change cards | Run a task that produces a patch and check summary, file labels, and detail expansion. |
 | `command-card` | auto-live | `command_card_checked` | 25 | Inspect command cards | Run a task with terminal output and verify command status, output, and failure states are readable. |
+| `terminal-open` | auto-live | `terminal_opened` | 20 | Open Terminal add-on | Open the Android Terminal add-on from the sidebar and verify the profile list or empty state is understandable. |
+| `terminal-profile` | auto-live | `terminal_profile_saved` | 35 | Save a terminal profile | Create or edit a terminal SSH profile and report confusing labels, key validation, or setup issues. |
+| `terminal-connect` | auto-live | `terminal_connect_started` | 40 | Try terminal SSH connect | Start an SSH connection from a saved terminal profile and report host trust, passphrase, auth, or network issues. |
 
 ## Route-Ready Missions
 

@@ -15,7 +15,7 @@ For a new Play release, always create a matching `beta_builds` row for the new `
 
 ## Add A New Beta Build
 
-Replace `0.1.2` and the text arrays with the new release content.
+Replace `0.1.5` and the text arrays with the new release content.
 
 ```sql
 insert into beta_builds (
@@ -28,19 +28,20 @@ insert into beta_builds (
   active_until
 )
 values (
-  '0.1.2',
+  '0.1.5',
   array[
-    'Fixed hydration processes during qr failed scan and allow camera notification',
-    'Cleaner completed-turn chat layout with the final assistant summary kept in the main timeline',
-    'Plan mode now generates a plan card with gold shimmering expandable and consultable during plan execution',
-    'Activity details now contains intermediate assistant notes, tool calls, command output, file edits, and grouped work batches',
-    'Added subtle live shimmer states while the assistant is reading, editing, running checks, or applying patches',
-    'Improved grouping for consecutive command runs and file edits inside Activity details',
-    'Upgraded scroll UX for steadier jump controls, timeline fading, and long-chat navigation'
+    'Added Tailscale support for easier local-first connectivity outside the LAN',
+    'Added the first Android terminal add-on flow with native SSH support, saved profiles, trusted hosts, multiple sessions, setup help, input handling, and terminal UI wiring',
+    'Upgraded remodex-host to 0.3.0',
+    'Added a host diagnostics panel',
+    'Added a new animated pet asset set with improved customization/setup assets',
+    'Improved setup customization and bundled host configuration',
+    'Improved Windows bridge compatibility, plan UI behavior, and Android/host runtime validation'
   ],
   array[
     'Open Tester HQ',
-    'Check today''s missions',
+    'Check the 0.1.5 wired missions',
+    'Test one local connection or conversation flow',
     'Send one useful feedback message'
   ],
   array[
@@ -66,7 +67,7 @@ Use this if you want fallback `/beta/hq` calls to resolve only to the latest bui
 ```sql
 update beta_builds
 set active_until = now()
-where app_version <> '0.1.2'
+where app_version <> '0.1.5'
   and active_until is null;
 ```
 
@@ -74,12 +75,7 @@ where app_version <> '0.1.2'
 
 Mission points are displayed by the app, but awarded only by the Edge Function rules. Android never sends point values.
 
-The current Edge Function automatically completes these mission ID patterns:
-
-- App open mission: `VERSION-open`, `VERSION-daily-open`, or `VERSION-latest-build-opened`
-- Feedback mission: `VERSION-feedback`, `VERSION-send-feedback`, or `VERSION-beta-feedback`
-
-Recommended IDs:
+This focused `0.1.5` set uses no more than five missions and emphasizes the newly introduced Terminal add-on. Each mission is either `auto-core` or has an Android hook plus backend event support.
 
 ```sql
 insert into beta_missions (
@@ -92,69 +88,11 @@ insert into beta_missions (
   active
 )
 values
-  (
-    '0.1.2-open',
-    '0.1.2',
-    'Open latest beta',
-    'Open the newest Android beta build and visit Tester HQ.',
-    15,
-    10,
-    true
-  ),
-  (
-    '0.1.2-test-main-flow',
-    '0.1.2',
-    'Test the main Remodex flow',
-    'Connect to your desktop session, send one message, and report if the completed chat view, Activity details, or live work states feel broken, slow, or confusing.',
-    50,
-    20,
-    true
-  ),
-  (
-    '0.1.2-streaming-response',
-    '0.1.2',
-    'Watch a streaming response',
-    'Send a request that produces a longer answer and check whether partial updates stream cleanly before the final summary remains in the main chat.',
-    35,
-    30,
-    true
-  ),
-  (
-    '0.1.2-scroll-long-thread',
-    '0.1.2',
-    'Test long-thread scrolling',
-    'Open a long conversation, scroll up and down, and verify jump controls, timeline fading, composer placement, and Activity details stay usable.',
-    25,
-    40,
-    true
-  ),
-  (
-    '0.1.2-command-card',
-    '0.1.2',
-    'Inspect command activity',
-    'Run a task with terminal output and verify command status, output, grouped command batches, and Activity details are readable.',
-    25,
-    50,
-    true
-  ),
-  (
-    '0.1.2-file-change-card',
-    '0.1.2',
-    'Inspect file-change activity',
-    'Run a safe task that produces a patch and verify file labels, grouped edit batches, and Activity details look correct.',
-    30,
-    60,
-    true
-  ),
-  (
-    '0.1.2-feedback',
-    '0.1.2',
-    'Send beta feedback',
-    'Send one useful feedback message from Tester HQ after checking the 0.1.2 chat and scroll changes.',
-    40,
-    70,
-    true
-  )
+  ('0.1.5-open', '0.1.5', 'Open latest beta', 'Open the newest Android beta build and visit Tester HQ.', 15, 10, true),
+  ('0.1.5-terminal-open', '0.1.5', 'Open Terminal add-on', 'Open the Android Terminal add-on from the sidebar and verify the profile list or empty state is understandable.', 20, 20, true),
+  ('0.1.5-terminal-profile', '0.1.5', 'Save a terminal profile', 'Create or edit a terminal SSH profile and report confusing labels, key validation, or setup issues.', 35, 30, true),
+  ('0.1.5-terminal-connect', '0.1.5', 'Try terminal SSH connect', 'Start an SSH connection from a saved terminal profile and report host trust, passphrase, auth, or network issues.', 40, 40, true),
+  ('0.1.5-feedback', '0.1.5', 'Send beta feedback', 'Send one useful feedback message from Tester HQ after checking the 0.1.5 Terminal add-on.', 40, 50, true)
 on conflict (id) do update set
   app_version = excluded.app_version,
   title = excluded.title,
@@ -164,35 +102,15 @@ on conflict (id) do update set
   active = excluded.active;
 ```
 
-## Add Display-Only Missions
+## Route-Ready Missions
 
-These appear in Tester HQ but will stay pending until the backend has a matching event rule.
+Do not enable route-ready catalog missions for `0.1.5` unless the matching Android hook has landed. They are supported by `/beta/mission-event`, but will stay pending on device until the app reliably sends the event.
 
 ```sql
-insert into beta_missions (
-  id,
-  app_version,
-  title,
-  description,
-  points,
-  sort_order,
-  active
-)
-values (
-  '0.1.2-test-qr-pairing',
-  '0.1.2',
-  'Test QR pairing',
-  'Pair the Android app with your local desktop session and report anything confusing.',
-  30,
-  30,
-  true
-)
-on conflict (id) do update set
-  title = excluded.title,
-  description = excluded.description,
-  points = excluded.points,
-  sort_order = excluded.sort_order,
-  active = excluded.active;
+-- Example: keep a route-ready mission hidden until Android sends the event.
+update beta_missions
+set active = false
+where id = '0.1.5-design-mode-open';
 ```
 
 ## Disable A Mission
@@ -200,7 +118,7 @@ on conflict (id) do update set
 ```sql
 update beta_missions
 set active = false
-where id = '0.1.2-test-qr-pairing';
+where id = '0.1.5-command-card';
 ```
 
 ## Copy Missions From Previous Build
@@ -218,15 +136,15 @@ insert into beta_missions (
   active
 )
 select
-  replace(id, '0.1.1', '0.1.2') as id,
-  '0.1.2' as app_version,
+  replace(id, '0.1.4', '0.1.5') as id,
+  '0.1.5' as app_version,
   title,
   description,
   points,
   sort_order,
   active
 from beta_missions
-where app_version = '0.1.1'
+where app_version = '0.1.4'
 on conflict (id) do update set
   app_version = excluded.app_version,
   title = excluded.title,
@@ -241,11 +159,11 @@ on conflict (id) do update set
 ```sql
 select *
 from beta_builds
-where app_version = '0.1.2';
+where app_version = '0.1.5';
 
 select id, title, description, points, sort_order, active
 from beta_missions
-where app_version = '0.1.2'
+where app_version = '0.1.5'
 order by sort_order asc;
 ```
 
