@@ -554,4 +554,18 @@ class TimelineMessageGroupingTest {
             listOf(edit).deriveTransientActivityStatus(true, "turn-1"),
         )
     }
+
+    @Test
+    fun transientActivityStatus_derivesSearchState() {
+        val search =
+            cmd("search").copy(
+                text = "running > rg citation android",
+                turnId = "turn-1",
+            )
+
+        assertEquals(
+            "searching...",
+            listOf(search).deriveTransientActivityStatus(true, "turn-1"),
+        )
+    }
 }

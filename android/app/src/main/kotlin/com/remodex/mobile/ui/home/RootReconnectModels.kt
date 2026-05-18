@@ -45,9 +45,9 @@ internal class RootTrustedReconnectFailureBudget(
         if (consecutiveTrustedFailures >= maxFailures) {
             consecutiveTrustedFailures = 0
             return RootTrustedReconnectFailureDecision(
-                recoveryAction = RootReconnectRecoveryAction.ScanNewQr,
-                shouldDropSavedRelaySession = true,
-                fallbackMessage = "The saved relay session expired. Scan a new QR code to reconnect.",
+                recoveryAction = RootReconnectRecoveryAction.RetrySavedPairing,
+                shouldDropSavedRelaySession = false,
+                fallbackMessage = "Could not reconnect. Tap Reconnect to try again.",
             )
         }
 
@@ -85,6 +85,23 @@ internal fun shouldAttemptSavedPairingReconnect(
     if (!hasRelayPairing || sessionReady) return false
     return connectionState !is ConnectionState.Connecting &&
         connectionState !is ConnectionState.Connected
+}
+
+internal fun shouldScheduleAutoReconnectAfterDrop(
+    phase: RootPhase,
+    hasRelayPairing: Boolean,
+    sessionReady: Boolean,
+    connectionState: ConnectionState,
+    reconnectAlreadyActive: Boolean,
+): Boolean {
+    if (reconnectAlreadyActive) return false
+    if (connectionState !is ConnectionState.Error) return false
+    return shouldAttemptSavedPairingReconnect(
+        phase = phase,
+        hasRelayPairing = hasRelayPairing,
+        sessionReady = sessionReady,
+        connectionState = connectionState,
+    )
 }
 
 internal fun reconnectRecoveryActionFor(error: Throwable): RootReconnectRecoveryAction {

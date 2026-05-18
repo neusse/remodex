@@ -13,17 +13,23 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -43,11 +49,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.composables.icons.lucide.R as LucideR
 import com.remodex.mobile.AppContainer
 import com.remodex.mobile.R
 import com.remodex.mobile.BuildConfig
@@ -85,9 +98,12 @@ import com.remodex.mobile.ui.LocalAIChangeSetPersistence
 import com.remodex.mobile.ui.agent.MessageList
 import com.remodex.mobile.ui.home.RootReconnectRecoveryAction
 import com.remodex.mobile.ui.home.RootReconnectUiState
+import com.remodex.mobile.ui.theme.AgentLightColors
 import com.remodex.mobile.ui.theme.RemodexModalBottomSheet
+import com.remodex.mobile.ui.theme.RemodexPopupChrome
 import com.remodex.mobile.services.CodexLookupService
 import com.remodex.mobile.services.isPluginListUnsupported
+import com.remodex.mobile.ui.theme.isAgentLightChrome
 import com.remodex.mobile.core.voice.BridgeVoiceRecorder
 import com.remodex.mobile.core.voice.VoiceDraftAppend
 import java.io.ByteArrayOutputStream
@@ -114,6 +130,16 @@ private const val SMART_SCROLL_FADE_JUMP_DISTANCE_ITEMS = 24
 private const val BETA_LONG_THREAD_MESSAGE_THRESHOLD = 18
 private const val BETA_LONG_THREAD_SCROLL_DISTANCE_ITEMS = 6
 private val TurnConversationMessageListTopPadding = 112.dp
+
+private data class PendingSteerDraft(
+    val draftText: String,
+    val wireText: String,
+    val attachments: List<CodexImageAttachment>,
+    val skillMentions: List<com.remodex.mobile.core.model.CodexTurnSkillMention>,
+    val fileMentions: List<com.remodex.mobile.core.model.CodexTurnMention>,
+    val mentionChips: List<ComposerMentionChipPayload>,
+    val composerAttachments: List<TurnComposerAttachment>,
+)
 /** Shaves a few dp off IME bottom padding so the composer sits slightly closer to the keyboard. */
 
 /**
@@ -162,6 +188,7 @@ fun TurnConversationPane(
     var closedPlanAccessoryMessageIds by rememberSaveable(threadId) { mutableStateOf<List<String>>(emptyList()) }
     var composerAttachments by remember(threadId) { mutableStateOf<List<TurnComposerAttachment>>(emptyList()) }
     var mentionChips by remember(threadId) { mutableStateOf<List<ComposerMentionChipPayload>>(emptyList()) }
+    var pendingSteerDraft by remember(threadId) { mutableStateOf<PendingSteerDraft?>(null) }
     var availableSkills by remember(threadId) { mutableStateOf<List<SkillAutocompleteSuggestion>>(emptyList()) }
     var availablePlugins by remember(threadId) { mutableStateOf<List<CodexPluginMetadata>>(emptyList()) }
     var pluginAutocompleteLoading by remember(threadId) { mutableStateOf(false) }
@@ -1207,6 +1234,55 @@ fun TurnConversationPane(
         }
     }
 
+    fun stageCurrentDraftForSteering() {
+        val draftText =
+            com.remodex.mobile.ui.turn.appendFileAttachmentsToDraft(
+                baseText = draftWithMentions,
+                files = readyComposerFileAttachments,
+                binarySummary = attachmentFileBinarySummary,
+            )
+        if (draftText.trim().isEmpty() &&
+            readyComposerImageAttachments.isEmpty() &&
+            structuredSkillMentions.isEmpty() &&
+            structuredFileMentions.isEmpty()
+        ) return
+        pendingSteerDraft =
+            PendingSteerDraft(
+                draftText = draft,
+                wireText = draftText,
+                attachments = readyComposerImageAttachments,
+                skillMentions = structuredSkillMentions,
+                fileMentions = structuredFileMentions,
+                mentionChips = mentionChips,
+                composerAttachments = composerAttachments,
+            )
+        draft = ""
+        composerAttachments = emptyList()
+        mentionChips = emptyList()
+    }
+
+    fun sendPendingSteerDraft(pending: PendingSteerDraft) {
+        val expectedTurnId = activeTurnId ?: return
+        scope.launch {
+            runCatching {
+                repository.steerTurn(
+                    threadId = threadId,
+                    expectedTurnId = expectedTurnId,
+                    text = pending.wireText,
+                    attachments = pending.attachments,
+                    skillMentions = pending.skillMentions,
+                    fileMentions = pending.fileMentions,
+                )
+            }.onSuccess {
+                if (pendingSteerDraft == pending) {
+                    pendingSteerDraft = null
+                }
+            }.onFailure { e ->
+                lastError = com.remodex.mobile.ui.turn.formatTurnSendError(e)
+            }
+        }
+    }
+
     fun stopActiveTurn() {
         scope.launch {
             runCatching {
@@ -1217,6 +1293,12 @@ fun TurnConversationPane(
             }.onFailure { e ->
                 lastError = com.remodex.mobile.ui.turn.formatTurnSendError(e)
             }
+        }
+    }
+
+    LaunchedEffect(threadId, isThreadRunning) {
+        if (!isThreadRunning) {
+            pendingSteerDraft = null
         }
     }
 
@@ -1638,14 +1720,43 @@ fun TurnConversationPane(
                     isSwitchingGitBranch = false
                 }
             }
-        TurnComposerBar(
-            draft = draft,
-            attachments = composerAttachments,
-            model = composerModel,
-            isPlanModeEnabled = isPlanModeEnabled,
-            runtimeControls = runtimeControls,
-            mentionChips = mentionChips,
-            autocomplete = autocompleteState,
+        val pendingSteer = pendingSteerDraft
+        Box(modifier = Modifier.fillMaxWidth()) {
+            pendingSteer?.let { pending ->
+                PendingSteerDraftBar(
+                    pending = pending,
+                    onSteer = { sendPendingSteerDraft(pending) },
+                    onEdit = {
+                        pendingSteerDraft = null
+                        draft = pending.draftText
+                        mentionChips = pending.mentionChips
+                        composerAttachments = pending.composerAttachments
+                    },
+                    onDelete = {
+                        if (pendingSteerDraft == pending) {
+                            pendingSteerDraft = null
+                        }
+                    },
+                    modifier =
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(horizontal = 42.dp)
+                            .zIndex(0f),
+                )
+            }
+            TurnComposerBar(
+                draft = draft,
+                attachments = composerAttachments,
+                model = composerModel,
+                isPlanModeEnabled = isPlanModeEnabled,
+                runtimeControls = runtimeControls,
+                mentionChips = mentionChips,
+                autocomplete = autocompleteState,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = if (pendingSteer != null) 36.dp else 0.dp)
+                        .zIndex(1f),
             onDraftChange = { next ->
                 draft = next
                 val target = reviewTarget
@@ -1931,6 +2042,10 @@ fun TurnConversationPane(
                 voicePhase = TurnVoicePhase.Idle
                 resetVoiceMeteringState()
                 lastError = null
+                if (isThreadRunning) {
+                    stageCurrentDraftForSteering()
+                    return@TurnComposerBar
+                }
                 val activeReviewTarget = reviewTarget
                 if (activeReviewTarget != null) {
                     if (isThreadRunning) {
@@ -1992,7 +2107,7 @@ fun TurnConversationPane(
                     fromQueue = false,
                 )
             },
-        )
+            )
         }
     }
     com.remodex.mobile.ui.turn.ForkThreadActionSheet(
@@ -2065,6 +2180,7 @@ fun TurnConversationPane(
         onDismiss = { fullTimelineMessage = null },
     )
 }
+}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -2097,6 +2213,111 @@ private fun FullTimelineMessageSheet(
                 modifier = Modifier.fillMaxWidth(),
                 keyPrefix = "full-${message.id}",
             )
+        }
+    }
+}
+
+@Composable
+private fun PendingSteerDraftBar(
+    pending: PendingSteerDraft,
+    onSteer: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val lightChrome = isAgentLightChrome()
+    val shape =
+        RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 10.dp,
+            bottomEnd = 10.dp,
+        )
+    val surfaceColor = RemodexPopupChrome.surfaceColor()
+    val iconTint =
+        if (lightChrome) {
+            AgentLightColors.IconMuted
+        } else {
+            colors.onSurfaceVariant
+        }
+    val textTint =
+        if (lightChrome) {
+            AgentLightColors.TextSecondary
+        } else {
+            colors.onSurfaceVariant
+        }
+    Surface(
+            modifier =
+                modifier
+                .fillMaxWidth()
+                .heightIn(min = 46.dp)
+                .shadow(
+                    elevation = if (lightChrome) 8.dp else 2.dp,
+                    shape = shape,
+                    ambientColor = Color.Black.copy(alpha = if (lightChrome) 0.05f else 0.10f),
+                    spotColor = Color.Black.copy(alpha = if (lightChrome) 0.05f else 0.10f),
+                ),
+        shape = shape,
+        color = surfaceColor,
+        border = RemodexPopupChrome.borderStroke(),
+        tonalElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 18.dp, end = 12.dp, top = 2.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = pending.draftText.ifBlank { stringResource(R.string.turn_queue_item_empty) },
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+                color = textTint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            TextButton(
+                onClick = onSteer,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                modifier =
+                    Modifier
+                        .heightIn(min = 28.dp)
+                        .clip(RoundedCornerShape(999.dp)),
+            ) {
+                Icon(
+                    painter = painterResource(LucideR.drawable.lucide_ic_send_horizontal),
+                    contentDescription = null,
+                    modifier = Modifier.size(15.dp),
+                    tint = colors.onSurface,
+                )
+                Text(
+                    text = stringResource(R.string.turn_steer_cd),
+                    color = colors.onSurface,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+            IconButton(
+                onClick = onEdit,
+                modifier = Modifier.size(30.dp),
+            ) {
+                Icon(
+                    painter = painterResource(LucideR.drawable.lucide_ic_pencil),
+                    contentDescription = stringResource(R.string.turn_steer_edit_cd),
+                    modifier = Modifier.size(17.dp),
+                    tint = iconTint,
+                )
+            }
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(30.dp),
+            ) {
+                Icon(
+                    painter = painterResource(LucideR.drawable.lucide_ic_trash_2),
+                    contentDescription = stringResource(R.string.turn_steer_delete_cd),
+                    modifier = Modifier.size(17.dp),
+                    tint = iconTint,
+                )
+            }
         }
     }
 }

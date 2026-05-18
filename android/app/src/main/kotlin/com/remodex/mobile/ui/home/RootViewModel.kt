@@ -6,14 +6,17 @@ import androidx.lifecycle.viewModelScope
 import com.remodex.mobile.AppContainer
 import com.remodex.mobile.core.persistence.OnboardingPreferences
 import com.remodex.mobile.core.persistence.SessionPersistence
+import com.remodex.mobile.core.transport.ConnectionState
 import com.remodex.mobile.data.CodexRepository
 import com.remodex.mobile.pairing.buildWebSocketConnectParams
 import com.remodex.mobile.pairing.reconnectUsingSavedRelaySnapshot
 import com.remodex.mobile.services.DesktopHandoffService
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 enum class RootPhase {
@@ -42,6 +45,14 @@ class RootViewModel(
 
     private val _reconnectUiState = MutableStateFlow(RootReconnectUiState())
     val reconnectUiState: StateFlow<RootReconnectUiState> = _reconnectUiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            repository.connectionState.collect { state ->
+                scheduleAutoReconnectAfterDropIfNeeded(state)
+            }
+        }
+    }
 
     private fun computeInitialPhase(): RootPhase {
         if (!onboardingPreferences.hasSeenOnboarding()) {
@@ -162,6 +173,26 @@ class RootViewModel(
         if (minIntervalMs > 0 && now - lastAutoConnectAttemptMs < minIntervalMs) return
         lastAutoConnectAttemptMs = now
         attemptSavedPairingReconnect(RootReconnectAttempt.Auto)
+    }
+
+    private fun scheduleAutoReconnectAfterDropIfNeeded(connectionState: ConnectionState) {
+        val snap = sessionPersistence.loadRelaySnapshot()
+        val hasRelayPairing = !snap.relayUrl.isNullOrBlank() && !snap.relaySessionId.isNullOrBlank()
+        if (!shouldScheduleAutoReconnectAfterDrop(
+                phase = _phase.value,
+                hasRelayPairing = hasRelayPairing,
+                sessionReady = repository.isSessionReady.value,
+                connectionState = connectionState,
+                reconnectAlreadyActive = autoReconnectJob?.isActive == true || manualReconnectJob?.isActive == true,
+            )
+        ) {
+            return
+        }
+        autoReconnectJob =
+            viewModelScope.launch {
+                delay(AUTO_RECONNECT_AFTER_DROP_DELAY_MS)
+                attemptAutoConnectIfNeeded(minIntervalMs = AUTO_RECONNECT_MIN_INTERVAL_MS)
+            }
     }
 
     private suspend fun attemptSavedPairingReconnect(attempt: RootReconnectAttempt) {
@@ -297,6 +328,9 @@ class RootViewModel(
     }
 
     companion object {
+        private const val AUTO_RECONNECT_AFTER_DROP_DELAY_MS = 1_000L
+        private const val AUTO_RECONNECT_MIN_INTERVAL_MS = 5_000L
+
         fun factory(): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")

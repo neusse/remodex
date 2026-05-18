@@ -31,6 +31,9 @@
     <string name="turn_timeline_group_executed_commands">Commands executed</string>
     <string name="turn_timeline_group_modified_files">Modified files</string>
     <string name="turn_timeline_group_work_details">Activity details</string>
+    <string name="turn_search_citations_title">Searches</string>
+    <string name="turn_search_citations_show">Show searches</string>
+    <string name="turn_search_citations_hide">Hide searches</string>
     <string name="turn_timeline_group_toggle_expand_cd">Show %1$d items</string>
     <string name="turn_timeline_group_toggle_collapse_cd">Hide group</string>
     <string name="turn_timeline_kind_plan">Plan</string>
@@ -89,6 +92,9 @@
     <string name="turn_attachment_camera_unavailable">Camera is not available on this device.</string>
     <string name="turn_attachment_camera_permission_denied">Camera permission is required to take a photo.</string>
     <string name="turn_send_cd">Send</string>
+    <string name="turn_steer_cd">Steer next</string>
+    <string name="turn_steer_edit_cd">Edit steering message</string>
+    <string name="turn_steer_delete_cd">Delete steering message</string>
     <string name="turn_voice_mic_cd">Voice input</string>
     <string name="turn_voice_stop_cd">Stop recording</string>
     <string name="turn_voice_cancel_recording_cd">Cancel voice recording</string>

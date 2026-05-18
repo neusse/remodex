@@ -51,6 +51,46 @@ class RootReconnectModelsTest {
     }
 
     @Test
+    fun shouldScheduleAutoReconnectAfterDrop_requiresMainErrorAndNoActiveReconnect() {
+        assertTrue(
+            shouldScheduleAutoReconnectAfterDrop(
+                phase = RootPhase.Main,
+                hasRelayPairing = true,
+                sessionReady = false,
+                connectionState = ConnectionState.Error("lost"),
+                reconnectAlreadyActive = false,
+            ),
+        )
+        assertFalse(
+            shouldScheduleAutoReconnectAfterDrop(
+                phase = RootPhase.Main,
+                hasRelayPairing = true,
+                sessionReady = false,
+                connectionState = ConnectionState.Error("lost"),
+                reconnectAlreadyActive = true,
+            ),
+        )
+        assertFalse(
+            shouldScheduleAutoReconnectAfterDrop(
+                phase = RootPhase.Main,
+                hasRelayPairing = true,
+                sessionReady = true,
+                connectionState = ConnectionState.Error("lost"),
+                reconnectAlreadyActive = false,
+            ),
+        )
+        assertFalse(
+            shouldScheduleAutoReconnectAfterDrop(
+                phase = RootPhase.PairingScan,
+                hasRelayPairing = true,
+                sessionReady = false,
+                connectionState = ConnectionState.Error("lost"),
+                reconnectAlreadyActive = false,
+            ),
+        )
+    }
+
+    @Test
     fun reconnectRecoveryActionFor_returnsScanNewQrForPairingMismatch() {
         assertEquals(
             RootReconnectRecoveryAction.ScanNewQr,
@@ -83,7 +123,7 @@ class RootReconnectModelsTest {
     }
 
     @Test
-    fun trustedReconnectFailureBudget_dropsSavedRelaySessionAfterRepeatedTemporaryFailures() {
+    fun trustedReconnectFailureBudget_preservesSavedRelaySessionAfterRepeatedTemporaryFailures() {
         val budget = RootTrustedReconnectFailureBudget(maxFailures = 3)
 
         val first = budget.record(CodexSecureTransportError.TimedOut("Timed out."))
@@ -94,8 +134,8 @@ class RootReconnectModelsTest {
         assertFalse(first.shouldDropSavedRelaySession)
         assertEquals(RootReconnectRecoveryAction.RetrySavedPairing, second.recoveryAction)
         assertFalse(second.shouldDropSavedRelaySession)
-        assertEquals(RootReconnectRecoveryAction.ScanNewQr, third.recoveryAction)
-        assertTrue(third.shouldDropSavedRelaySession)
+        assertEquals(RootReconnectRecoveryAction.RetrySavedPairing, third.recoveryAction)
+        assertFalse(third.shouldDropSavedRelaySession)
     }
 
     @Test

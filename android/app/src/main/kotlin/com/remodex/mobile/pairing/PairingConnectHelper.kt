@@ -41,8 +41,9 @@ fun buildWebSocketConnectParams(
 }
 
 /**
- * Disconnects and reconnects using [snap] when relay fields are present (parity iOS `toggleConnection`
- * after bridge update, including service-tier capability prompts).
+ * Reconnects using [snap] when relay fields are present (parity iOS `toggleConnection`
+ * after bridge update, including service-tier capability prompts). [CodexRepository.connect] already
+ * replaces any live transport while preserving presentation state.
  */
 suspend fun reconnectUsingSavedRelaySnapshot(
     repository: CodexRepository,
@@ -50,7 +51,6 @@ suspend fun reconnectUsingSavedRelaySnapshot(
     relayHostOverride: String = "",
 ) {
     if (snap.relayUrl.isNullOrBlank() || snap.relaySessionId.isNullOrBlank()) return
-    repository.disconnect()
     val (url, token) = buildWebSocketConnectParams(snap, relayHostOverride)
     repository.connect(serverUrl = url, token = token, role = null)
 }

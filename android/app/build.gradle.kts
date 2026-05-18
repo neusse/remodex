@@ -40,7 +40,7 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        versionCode = 11
+        versionCode = 13
         versionName = "0.1.5"
         buildConfigField("boolean", "BETA_ENABLED", betaEnabled.toString())
         buildConfigField("String", "BETA_API_BASE_URL", quotedBuildConfigString(betaApiBaseUrl))

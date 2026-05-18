@@ -186,8 +186,10 @@ private fun commandExecutionStatus(text: String): String {
             "running checks..."
         Regex("""\b(git\s+status|git\s+diff|diff|status)\b""").containsMatchIn(command) ->
             "checking changes..."
-        Regex("""\b(cat|nl|head|tail|sed|less|more|rg|grep|ag|ack|ls|find|fd|read_file|view_file|search)\b""")
+        Regex("""\b(rg|grep|ag|ack|find|fd|search|workspace_?search|semantic_?search|code_?search|web_?search)\b""")
             .containsMatchIn(command) ->
+            "searching..."
+        Regex("""\b(cat|nl|head|tail|sed|less|more|ls|read_file|view_file)\b""").containsMatchIn(command) ->
             "thinking..."
         else -> "working..."
     }

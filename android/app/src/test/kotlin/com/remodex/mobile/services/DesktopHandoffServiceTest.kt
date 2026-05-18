@@ -10,6 +10,8 @@ import com.remodex.mobile.core.model.CodexModelOption
 import com.remodex.mobile.core.model.CodexBridgeUpdatePrompt
 import com.remodex.mobile.core.model.CodexServiceTier
 import com.remodex.mobile.core.model.CodexThread
+import com.remodex.mobile.core.model.CodexTurnMention
+import com.remodex.mobile.core.model.CodexTurnSkillMention
 import com.remodex.mobile.core.model.JSONValue
 import com.remodex.mobile.core.model.PendingApprovalDecision
 import com.remodex.mobile.core.model.PendingApprovalRequest
@@ -282,6 +284,14 @@ private class HandoffFakeRepository(
         skillMentions: List<com.remodex.mobile.core.model.CodexTurnSkillMention>,
         fileMentions: List<com.remodex.mobile.core.model.CodexTurnMention>,
         collaborationMode: CodexCollaborationModeKind?,
+    ) = error("unused")
+    override suspend fun steerTurn(
+        threadId: String,
+        expectedTurnId: String,
+        text: String,
+        attachments: List<CodexImageAttachment>,
+        skillMentions: List<CodexTurnSkillMention>,
+        fileMentions: List<CodexTurnMention>,
     ) = error("unused")
 
     override suspend fun interruptTurn(

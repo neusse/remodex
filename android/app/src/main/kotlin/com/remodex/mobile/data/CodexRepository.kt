@@ -264,6 +264,16 @@ interface CodexRepository {
         collaborationMode: CodexCollaborationModeKind? = null,
     )
 
+    /** Adds user input to the active regular turn (`turn/steer`). */
+    suspend fun steerTurn(
+        threadId: String,
+        expectedTurnId: String,
+        text: String,
+        attachments: List<CodexImageAttachment> = emptyList(),
+        skillMentions: List<CodexTurnSkillMention> = emptyList(),
+        fileMentions: List<CodexTurnMention> = emptyList(),
+    )
+
     /** Starts a native `review/start` turn. Attachments and plan mode are intentionally not supported. */
     suspend fun startReview(
         threadId: String,

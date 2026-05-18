@@ -75,4 +75,84 @@ class SkillReferenceFormatterTest {
         val expected = "Use `/.codex/skills/code-review/Skill.md` and Code Review."
         assertEquals(expected, SkillReferenceFormatter.formatVisibleProse(input))
     }
+
+    @Test
+    fun removesSearchCitationMarkersFromVisibleProse() {
+        val input =
+            "The docs list `turn/steer` as a real method.\uE200cite\uE202turn0search2\uE202turn0search3\uE201"
+
+        assertEquals(
+            "The docs list `turn/steer` as a real method.",
+            SkillReferenceFormatter.formatVisibleProse(input),
+        )
+    }
+
+    @Test
+    fun removesSearchCitationMarkersWithLargeTurnAndSearchNumbers() {
+        val input = "The current contract is clear.\uE200cite\uE202turn11103search49005\uE201"
+
+        assertEquals(
+            "The current contract is clear.",
+            SkillReferenceFormatter.formatVisibleProse(input),
+        )
+    }
+
+    @Test
+    fun extractsSearchCitationRefsFromVisibleProse() {
+        val input =
+            "The docs list it.\uE200cite\uE202turn0search2\uE202turn11103search49005\uE201 " +
+                "and again 〖cite〗turn0search2〖/cite〗"
+
+        assertEquals(
+            listOf("turn0search2", "turn11103search49005"),
+            SkillReferenceFormatter.extractSearchCitations(input),
+        )
+    }
+
+    @Test
+    fun doesNotExtractSearchCitationRefsInsideCode() {
+        val input =
+            """
+            Keep `\uE200cite\uE202turn0search2\uE201` inline.
+            ```text
+            \uE200cite\uE202turn0search3\uE201
+            ```
+            """.trimIndent()
+
+        assertEquals(emptyList<String>(), SkillReferenceFormatter.extractSearchCitations(input))
+    }
+
+    @Test
+    fun removesBracketedSearchCitationMarkersFromVisibleProse() {
+        val input = "This changes the conclusion. 〖cite〗turn0search2turn0search3〖/cite〗"
+
+        assertEquals(
+            "This changes the conclusion. ",
+            SkillReferenceFormatter.formatVisibleProse(input),
+        )
+    }
+
+    @Test
+    fun removesMalformedBracketedSearchCitationMarkersFromVisibleProse() {
+        val input = "Follow-up behavior. 〖cite〗turn1search0〖turn1search3〗"
+
+        assertEquals(
+            "Follow-up behavior. ",
+            SkillReferenceFormatter.formatVisibleProse(input),
+        )
+    }
+
+    @Test
+    fun preservesNonNumericSearchCitationMarkersFromVisibleProse() {
+        val input = "Search source.\u3016cite\u3017turnxsearchyturnAlphaSearchBeta\u3016/cite\u3017"
+
+        assertEquals(input, SkillReferenceFormatter.formatVisibleProse(input))
+    }
+
+    @Test
+    fun preservesCitationMarkersInsideCode() {
+        val input = "Keep `\uE200cite\uE202turn0search2\uE201` literal."
+
+        assertEquals(input, SkillReferenceFormatter.formatVisibleProse(input))
+    }
 }

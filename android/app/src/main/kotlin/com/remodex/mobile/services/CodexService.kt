@@ -567,6 +567,15 @@ class CodexService(
         collaborationMode: CodexCollaborationModeKind?,
     ) = startTurnForRepository(threadId, text, attachments, skillMentions, fileMentions, collaborationMode)
 
+    override suspend fun steerTurn(
+        threadId: String,
+        expectedTurnId: String,
+        text: String,
+        attachments: List<CodexImageAttachment>,
+        skillMentions: List<CodexTurnSkillMention>,
+        fileMentions: List<CodexTurnMention>,
+    ) = steerTurnForRepository(threadId, expectedTurnId, text, attachments, skillMentions, fileMentions)
+
     override suspend fun startReview(
         threadId: String,
         target: CodexReviewTarget,

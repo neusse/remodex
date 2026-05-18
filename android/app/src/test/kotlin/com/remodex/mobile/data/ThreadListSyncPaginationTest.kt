@@ -160,6 +160,14 @@ private abstract class TestRepository : CodexRepository {
         fileMentions: List<CodexTurnMention>,
         collaborationMode: CodexCollaborationModeKind?,
     ) = error("unused")
+    override suspend fun steerTurn(
+        threadId: String,
+        expectedTurnId: String,
+        text: String,
+        attachments: List<CodexImageAttachment>,
+        skillMentions: List<CodexTurnSkillMention>,
+        fileMentions: List<CodexTurnMention>,
+    ) = error("unused")
     override suspend fun interruptTurn(threadId: String, turnId: String?) = error("unused")
     override suspend fun sendNotification(method: String, params: JSONValue?) = error("unused")
     override suspend fun startReview(threadId: String, target: CodexReviewTarget, baseBranch: String?) = error("unused")
