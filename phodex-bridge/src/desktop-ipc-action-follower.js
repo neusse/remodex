@@ -644,11 +644,11 @@ function collectAssistantMessages(conversationState) {
 }
 
 function isAssistantMessageItem(item) {
-  const type = readString(item?.type).toLowerCase();
-  if (type === "assistant_message" || type === "assistantmessage") {
+  const type = normalizeToken(item?.type);
+  if (type === "agentmessage" || type === "assistantmessage") {
     return true;
   }
-  return type === "message" && readString(item?.role).toLowerCase() === "assistant";
+  return type === "message" && normalizeToken(item?.role) === "assistant";
 }
 
 function assistantMessageText(item) {
@@ -790,6 +790,10 @@ function writeFrame(socket, payload, callback) {
 }
 
 function resolveDefaultIpcSocketPath() {
+  if (process.platform === "win32") {
+    return "\\\\.\\pipe\\codex-ipc";
+  }
+
   const uid = typeof process.getuid === "function" ? process.getuid() : 0;
   return path.join(os.tmpdir(), "codex-ipc", `ipc-${uid}.sock`);
 }
@@ -813,6 +817,12 @@ function requestIdKey(value) {
 
 function readString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function normalizeToken(value) {
+  return typeof value === "string"
+    ? value.toLowerCase().replace(/[_-\s]+/g, "")
+    : "";
 }
 
 function cloneJSON(value) {
