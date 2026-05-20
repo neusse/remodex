@@ -313,6 +313,33 @@ function startBridge({
     relayWatchdogTimer = null;
   }
 
+  function prepareBridgeShutdown() {
+    isShuttingDown = true;
+    bridgeWakeAssertion.stop();
+    clearReconnectTimer();
+    clearRelayWatchdog();
+    bridgeStatusPublisher.stopHeartbeat();
+    stopContextUsageWatcher();
+    rolloutLiveMirror?.stopAll();
+    desktopIpcActionFollower?.stopAll();
+  }
+
+  function stopBridge() {
+    if (isShuttingDown) {
+      return;
+    }
+
+    prepareBridgeShutdown();
+    desktopRefresher.handleTransportReset();
+    failBridgeManagedCodexRequests(new Error("Bridge stopped before the request completed."));
+    forwardedRequestMethodsById.clear();
+
+    if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
+      socket.close();
+    }
+    codex.shutdown();
+  }
+
   function startRelayWatchdog(trackedSocket) {
     clearRelayWatchdog();
     markRelayActivity();
@@ -367,13 +394,7 @@ function startBridge({
 
     if (closeCode === 4000 || closeCode === 4001) {
       logConnectionStatus("disconnected");
-      shutdown(codex, () => socket, () => {
-        isShuttingDown = true;
-        bridgeWakeAssertion.stop();
-        clearReconnectTimer();
-        clearRelayWatchdog();
-        bridgeStatusPublisher.stopHeartbeat();
-      });
+      shutdown(codex, () => socket, prepareBridgeShutdown);
       return;
     }
 
@@ -509,12 +530,7 @@ function startBridge({
       console.error(`[remodex] ${lastError}`);
       process.exitCode = 1;
     }
-    isShuttingDown = true;
-    bridgeWakeAssertion.stop();
-    clearReconnectTimer();
-    stopContextUsageWatcher();
-    rolloutLiveMirror?.stopAll();
-    desktopIpcActionFollower?.stopAll();
+    prepareBridgeShutdown();
     desktopRefresher.handleTransportReset();
     failBridgeManagedCodexRequests(new Error("Codex transport closed before the bridge request completed."));
     forwardedRequestMethodsById.clear();
@@ -523,20 +539,8 @@ function startBridge({
     }
   });
 
-  process.on("SIGINT", () => shutdown(codex, () => socket, () => {
-    isShuttingDown = true;
-    bridgeWakeAssertion.stop();
-    clearReconnectTimer();
-    clearRelayWatchdog();
-    bridgeStatusPublisher.stopHeartbeat();
-  }));
-  process.on("SIGTERM", () => shutdown(codex, () => socket, () => {
-    isShuttingDown = true;
-    bridgeWakeAssertion.stop();
-    clearReconnectTimer();
-    clearRelayWatchdog();
-    bridgeStatusPublisher.stopHeartbeat();
-  }));
+  process.on("SIGINT", () => shutdown(codex, () => socket, prepareBridgeShutdown));
+  process.on("SIGTERM", () => shutdown(codex, () => socket, prepareBridgeShutdown));
 
   // Routes decrypted app payloads through the same bridge handlers as before.
   function handleApplicationMessage(rawMessage) {
@@ -1400,29 +1404,6 @@ function startBridge({
       child.unref?.();
     }, BRIDGE_RESTART_AFTER_UPDATE_DELAY_MS);
     restartTimer.unref?.();
-  }
-
-  function stopBridge() {
-    if (isShuttingDown) {
-      return;
-    }
-
-    isShuttingDown = true;
-    bridgeWakeAssertion.stop();
-    clearReconnectTimer();
-    clearRelayWatchdog();
-    bridgeStatusPublisher.stopHeartbeat();
-    stopContextUsageWatcher();
-    rolloutLiveMirror?.stopAll();
-    desktopIpcActionFollower?.stopAll();
-    desktopRefresher.handleTransportReset();
-    failBridgeManagedCodexRequests(new Error("Bridge stopped before the request completed."));
-    forwardedRequestMethodsById.clear();
-
-    if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
-      socket.close();
-    }
-    codex.shutdown();
   }
 
   return {

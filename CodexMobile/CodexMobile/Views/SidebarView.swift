@@ -32,6 +32,7 @@ struct SidebarView<ConnectionEmptyStatePanel: View, ConnectionEmptyStateFooter: 
 
     let onClose: () -> Void
     let onOpenSettings: () -> Void
+    let onOpenMyMacs: () -> Void
     let onOpenTerminal: () -> Void
     let onOpenNewChatDraft: (NewChatDraftSource, String?) -> Void
     let onNewChatCreationStateChange: (Bool) -> Void
@@ -333,6 +334,12 @@ struct SidebarView<ConnectionEmptyStatePanel: View, ConnectionEmptyStateFooter: 
         searchText = ""
         isSearchActive = false
         onOpenTerminal()
+    }
+
+    private func openMyMacs() {
+        searchText = ""
+        isSearchActive = false
+        onOpenMyMacs()
     }
 
     // Clears sidebar-only input state before navigation so full-width search mode cannot hold the drawer open.
@@ -717,6 +724,7 @@ struct SidebarView<ConnectionEmptyStatePanel: View, ConnectionEmptyStateFooter: 
             onQuickChat: handleQuickChatTap,
             onNewProject: handleNewProjectTap,
             onOpenTerminal: openTerminal,
+            onOpenMyMacs: openMyMacs,
             onOpenSettings: openSettings
         )
     }

@@ -18,6 +18,7 @@ struct SidebarOverflowMenuActions {
     var onQuickChat: () -> Void
     var onNewProject: () -> Void
     var onOpenTerminal: () -> Void
+    var onOpenMyMacs: () -> Void
     var onOpenSettings: () -> Void
 }
 
@@ -39,6 +40,12 @@ struct SidebarHeaderView: View {
                 Spacer(minLength: 0)
 
                 overflowMenuButton
+
+                SidebarToolbarIconButton(
+                    icon: .systemImage("desktopcomputer"),
+                    accessibilityLabel: "My Macs",
+                    action: overflowActions.onOpenMyMacs
+                )
 
                 SidebarToolbarIconButton(
                     icon: .systemImage("gearshape"),
@@ -141,6 +148,7 @@ struct SidebarHeaderView: View {
             onQuickChat: {},
             onNewProject: {},
             onOpenTerminal: {},
+            onOpenMyMacs: {},
             onOpenSettings: {}
         )
     )

@@ -214,7 +214,14 @@ extension CodexService {
     }
 
     func persistComposerDrafts() {
-        composerDraftPersistence.save(composerDraftsByThreadID)
+        guard !suspendAutomaticMacScopedPersistence else {
+            return
+        }
+
+        composerDraftPersistence.save(
+            composerDraftsByThreadID,
+            macDeviceId: currentMacScopedPersistenceDeviceId
+        )
     }
 
     // Sends user input as a new turn against an existing (or newly created) thread.
@@ -481,6 +488,18 @@ extension CodexService {
 
             lastErrorMessage = userFacingTurnErrorMessageForFooter(from: finalError)
             throw finalError
+        }
+    }
+
+    // Interrupts every active or protected run before switching to a different Mac context.
+    func interruptAllRunningTurnsBeforeMacSwitch() async throws {
+        let candidateThreadIDs = runningThreadIDs
+            .union(protectedRunningFallbackThreadIDs)
+            .union(activeTurnIdByThread.keys)
+            .sorted()
+
+        for threadID in candidateThreadIDs {
+            try await interruptTurn(turnId: nil, threadId: threadID)
         }
     }
 

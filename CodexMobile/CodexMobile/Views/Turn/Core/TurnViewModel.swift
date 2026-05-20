@@ -114,13 +114,13 @@ struct TurnComposerLocalDraft: Codable, Equatable, Sendable {
     let isSubagentsSelectionArmed: Bool
     let updatedAt: Date
 
-    var isEmpty: Bool {
+    nonisolated var isEmpty: Bool {
         input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && mentionedFiles.isEmpty
             && mentionedSkills.isEmpty
             && mentionedPlugins.isEmpty
             && attachments.isEmpty
-            && reviewSelection == nil
+            && (reviewSelection.map { _ in false } ?? true)
             && !isPlanModeArmed
             && !isSubagentsSelectionArmed
     }

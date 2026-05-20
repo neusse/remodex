@@ -26,6 +26,7 @@ enum ContentNavigationRoute: Hashable {
     case newChatOpening
     case thread(id: String)
     case settings
+    case myMacs
     case terminal(preferredWorkingDirectory: String?)
 }
 
@@ -43,6 +44,7 @@ struct ContentView: View {
     @State private var selectedThread: CodexThread?
     @State private var navigationPath: [ContentNavigationRoute] = []
     @State private var isShowingManualScanner = false
+    @State private var isShowingMyMacsScanner = false
     @State private var hasDismissedAutomaticScanner = false
     @State private var scannerCanReturnToOnboarding = false
     @State private var isShowingManualPairingEntry = false
@@ -52,10 +54,12 @@ struct ContentView: View {
     @State private var isSearchActive = false
     @State private var isRetryingBridgeUpdate = false
     @State private var isPreparingManualScanner = false
+    @State private var macSwitchTask: Task<Void, Never>?
     @State private var isWakingSavedMacDisplay = false
     @State private var hasAttemptedAutomaticWakeSavedMacDisplay = false
     @State private var threadCompletionBannerDismissTask: Task<Void, Never>?
     @State private var whatsNewPresentationTask: Task<Void, Never>?
+    @State private var suppressAutomaticThreadSelection = false
     @State private var sidebarPrewarmTask: Task<Void, Never>?
     @State private var presentedRootSheet: RootSheetRoute?
     @State private var isWhatsNewPresentationReady = false
@@ -134,6 +138,9 @@ struct ContentView: View {
                     to: thread?.id
                 )
                 codex.activeThreadId = thread?.id
+                if thread != nil {
+                    suppressAutomaticThreadSelection = false
+                }
             }
             .onChange(of: codex.activeThreadId) { _, activeThreadId in
                 debugSidebarLog("activeThreadId changed to=\(activeThreadId ?? "nil")")
@@ -346,10 +353,16 @@ struct ContentView: View {
                     isShowingManualScanner = false
                     hasDismissedAutomaticScanner = false
                     scannerCanReturnToOnboarding = false
-                    await viewModel.connectToRelay(
-                        pairingPayload: pairingPayload,
-                        codex: codex
-                    )
+                    if isShowingMyMacsScanner {
+                        isShowingMyMacsScanner = false
+                        prepareForMacContextTransition()
+                        startScannedMacSwitch(pairingPayload)
+                    } else {
+                        await viewModel.connectToRelay(
+                            pairingPayload: pairingPayload,
+                            codex: codex
+                        )
+                    }
                 }
             }
         )
@@ -494,6 +507,18 @@ struct ContentView: View {
         case .settings:
             SettingsView()
                 .adaptiveNavigationBar()
+        case .myMacs:
+            MyMacsView(
+                onScanQRCode: presentMyMacsScanner,
+                onSwitchMac: switchToTrustedMac,
+                onForgetMac: forgetTrustedMac,
+                onCancelSwitch: cancelMacSwitch,
+                isSwitchingMac: viewModel.isSwitchingMac,
+                isCancellingMacSwitch: viewModel.isCancellingMacSwitch,
+                switchingMacDeviceId: viewModel.switchingMacDeviceId,
+                switchNotice: viewModel.macSwitchNotice
+            )
+            .adaptiveNavigationBar()
         case .terminal(let preferredWorkingDirectory):
             TerminalScreen(preferredWorkingDirectory: preferredWorkingDirectory)
                 .adaptiveNavigationBar()
@@ -514,6 +539,9 @@ struct ContentView: View {
             onClose: onClose,
             onOpenSettings: {
                 openSettingsFromSidebar()
+            },
+            onOpenMyMacs: {
+                openMyMacsFromSidebar()
             },
             onOpenTerminal: {
                 openTerminalFromSidebar(preferredWorkingDirectory: nil)
@@ -1132,6 +1160,17 @@ struct ContentView: View {
         isShowingSettingsCover = true
     }
 
+    private func openMyMacsFromSidebar() {
+        hasDismissedAutomaticScanner = true
+        let route = ContentNavigationRoute.myMacs
+        if shouldPresentSidebarAsNavigation {
+            appendNavigationRoute(route)
+        } else {
+            closeSidebar()
+            appendNavigationRoute(route)
+        }
+    }
+
     // Prevents a close-swipe release from also activating whichever sidebar row was under the finger.
     private func suppressSidebarSelectionBriefly() {
         sidebarSelectionSuppressedUntil = Date().addingTimeInterval(sidebarSelectionSuppressionDuration)
@@ -1600,6 +1639,12 @@ struct ContentView: View {
         }
     }
 
+    private func presentMyMacsScanner() {
+        hasDismissedAutomaticScanner = true
+        isShowingMyMacsScanner = true
+        presentManualScannerAfterStoppingReconnect()
+    }
+
     // Re-opens the scanner after the user backed out to the empty state without a saved pairing.
     private func presentAutomaticScanner() {
         withAnimation {
@@ -1611,6 +1656,7 @@ struct ContentView: View {
     private func dismissScannerToHome() {
         withAnimation {
             isShowingManualScanner = false
+            isShowingMyMacsScanner = false
             hasDismissedAutomaticScanner = true
             scannerCanReturnToOnboarding = false
         }
@@ -1624,6 +1670,7 @@ struct ContentView: View {
 
         withAnimation {
             isShowingManualScanner = false
+            isShowingMyMacsScanner = false
             hasDismissedAutomaticScanner = false
             scannerCanReturnToOnboarding = false
             hasSeenOnboarding = false
@@ -1795,10 +1842,89 @@ struct ContentView: View {
 
         if selectedThread == nil,
            codex.activeThreadId == nil,
+           !suppressAutomaticThreadSelection,
            codex.pendingNotificationOpenThreadID == nil,
            let first = threads.first {
             selectedThread = first
         }
+    }
+
+    private func prepareForMacContextTransition() {
+        hasDismissedAutomaticScanner = true
+        suppressAutomaticThreadSelection = true
+        selectedThread = nil
+        codex.activeThreadId = nil
+        if isSidebarOpen {
+            closeSidebar()
+        }
+    }
+
+    private func switchToTrustedMac(_ deviceId: String) {
+        guard !viewModel.isSwitchingMac else {
+            return
+        }
+        prepareForMacContextTransition()
+        macSwitchTask = Task {
+            do {
+                try await viewModel.switchToTrustedMac(deviceId: deviceId, codex: codex)
+                await MainActor.run {
+                    navigationPath.removeAll()
+                }
+            } catch {
+                // Error is already routed through CodexService state for the page to present.
+            }
+            await MainActor.run {
+                macSwitchTask = nil
+            }
+        }
+    }
+
+    private func startScannedMacSwitch(_ pairingPayload: CodexPairingQRPayload) {
+        guard !viewModel.isSwitchingMac else {
+            return
+        }
+
+        macSwitchTask = Task {
+            do {
+                try await viewModel.switchToScannedMac(
+                    pairingPayload: pairingPayload,
+                    codex: codex
+                )
+                await MainActor.run {
+                    navigationPath.removeAll()
+                }
+            } catch {
+                // Error is already exposed through CodexService state.
+            }
+            await MainActor.run {
+                macSwitchTask = nil
+            }
+        }
+    }
+
+    private func cancelMacSwitch() {
+        guard let macSwitchTask else {
+            return
+        }
+
+        macSwitchTask.cancel()
+        Task {
+            await viewModel.requestMacSwitchCancellation(codex: codex)
+        }
+    }
+
+    private func forgetTrustedMac(_ deviceId: String) {
+        let isCurrentTrustedMac = codex.normalizedCurrentTrustedMacDeviceId == deviceId
+        if isCurrentTrustedMac {
+            prepareForMacContextTransition()
+            Task {
+                await codex.disconnect()
+                codex.forgetTrustedMac(deviceId: deviceId)
+            }
+            return
+        }
+
+        codex.forgetTrustedMac(deviceId: deviceId)
     }
 }
 
