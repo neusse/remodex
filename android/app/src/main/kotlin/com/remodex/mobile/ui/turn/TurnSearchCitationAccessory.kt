@@ -47,6 +47,7 @@ internal fun TurnSearchCitationAccessory(
     markdown: String,
     isStreaming: Boolean,
     modifier: Modifier = Modifier,
+    onExpand: () -> Unit = {},
 ) {
     val citations = remember(markdown) { SkillReferenceFormatter.extractSearchCitations(markdown) }
     if (citations.isEmpty()) return
@@ -72,7 +73,13 @@ internal fun TurnSearchCitationAccessory(
                         contentDescription = rowCd
                         role = Role.Button
                     }
-                    .clickable { expanded = !expanded }
+                    .clickable {
+                        val nextExpanded = !expanded
+                        expanded = nextExpanded
+                        if (nextExpanded) {
+                            onExpand()
+                        }
+                    }
                     .padding(vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

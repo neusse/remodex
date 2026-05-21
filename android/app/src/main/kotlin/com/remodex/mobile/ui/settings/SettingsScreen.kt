@@ -10,6 +10,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -48,6 +51,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -65,6 +69,7 @@ import com.remodex.mobile.core.config.FeatureFlags
 import com.remodex.mobile.core.model.AppFontStyle
 import com.remodex.mobile.core.model.AppLanguagePreference
 import com.remodex.mobile.core.model.AppThemePreference
+import com.remodex.mobile.core.model.UserBubbleColor
 import com.remodex.mobile.core.model.ContextWindowUsage
 import com.remodex.mobile.core.model.CodexRateLimitBucket
 import com.remodex.mobile.core.notification.LocalNotificationSettings
@@ -74,8 +79,10 @@ import com.remodex.mobile.data.AppFontPreferences
 import com.remodex.mobile.data.CodexRepository
 import com.remodex.mobile.data.LanguagePreferences
 import com.remodex.mobile.data.ThemePreferences
+import com.remodex.mobile.data.UserBubblePreferences
 import com.remodex.mobile.ui.shared.UsageStatusSummary
 import com.remodex.mobile.ui.theme.remodexScreenTopAppBarColors
+import com.remodex.mobile.ui.theme.swatchColor
 import com.remodex.mobile.terminal.TerminalWindowsSetupGuide
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,6 +102,7 @@ fun SettingsScreen(
     var fontStyle by remember { mutableStateOf(AppFontPreferences.readFontStyle(context)) }
     var languagePreference by remember { mutableStateOf(LanguagePreferences.read(context)) }
     var themePreference by remember { mutableStateOf(ThemePreferences.read(context)) }
+    var userBubbleColor by remember { mutableStateOf(UserBubblePreferences.read(context)) }
     var localRelayHostOverride by remember {
         mutableStateOf(AppContainer.sessionPersistence.loadLocalRelayHostOverride().orEmpty())
     }
@@ -168,6 +176,61 @@ fun SettingsScreen(
             }
 
             Text(
+                text = stringResource(R.string.settings_user_bubble_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(R.string.settings_user_bubble_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            UserBubbleColor.entries.forEach { option ->
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = option == userBubbleColor,
+                                onClick = {
+                                    val changed = option != userBubbleColor
+                                    userBubbleColor = option
+                                    UserBubblePreferences.write(context, option)
+                                    if (changed) {
+                                        scope.launch {
+                                            AppContainer.betaEngagementRepository.recordMissionEvent(
+                                                eventType = "user_bubble_color_changed",
+                                                screen = "settings",
+                                                refreshAfter = false,
+                                            )
+                                        }
+                                    }
+                                },
+                                role = Role.RadioButton,
+                            )
+                            .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(
+                        selected = option == userBubbleColor,
+                        onClick = null,
+                    )
+                    Box(
+                        modifier =
+                            Modifier
+                                .padding(start = 8.dp)
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(option.swatchColor()),
+                    )
+                    Text(
+                        text = stringResource(settingsUserBubbleTitleRes(option)),
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(start = 10.dp),
+                    )
+                }
+            }
+
+            Text(
                 text = stringResource(R.string.settings_language_title),
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -202,7 +265,15 @@ fun SettingsScreen(
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Text(
-                            text = stringResource(settingsLanguageSubtitleRes(option)),
+                            text =
+                                if (option == AppLanguagePreference.system) {
+                                    stringResource(
+                                        settingsLanguageSubtitleRes(option),
+                                        LanguagePreferences.currentSystemLocaleDisplayName(context),
+                                    )
+                                } else {
+                                    stringResource(settingsLanguageSubtitleRes(option))
+                                },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -694,6 +765,18 @@ private fun settingsThemeSubtitleRes(option: AppThemePreference): Int =
         AppThemePreference.system -> R.string.settings_theme_system_subtitle
         AppThemePreference.light -> R.string.settings_theme_light_subtitle
         AppThemePreference.dark -> R.string.settings_theme_dark_subtitle
+    }
+
+private fun settingsUserBubbleTitleRes(option: UserBubbleColor): Int =
+    when (option) {
+        UserBubbleColor.default -> R.string.settings_user_bubble_default
+        UserBubbleColor.orange -> R.string.settings_user_bubble_orange
+        UserBubbleColor.yellow -> R.string.settings_user_bubble_yellow
+        UserBubbleColor.green -> R.string.settings_user_bubble_green
+        UserBubbleColor.blue -> R.string.settings_user_bubble_blue
+        UserBubbleColor.pink -> R.string.settings_user_bubble_pink
+        UserBubbleColor.purple -> R.string.settings_user_bubble_purple
+        UserBubbleColor.black -> R.string.settings_user_bubble_black
     }
 
 private fun settingsLanguageTitleRes(option: AppLanguagePreference): Int =

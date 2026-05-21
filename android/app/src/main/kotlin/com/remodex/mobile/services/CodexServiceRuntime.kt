@@ -2,8 +2,10 @@ package com.remodex.mobile.services
 
 import com.remodex.mobile.core.error.CodexServiceError
 import com.remodex.mobile.core.model.CodexAccessMode
+import com.remodex.mobile.core.model.CodexCollaborationModeKind
 import com.remodex.mobile.core.model.CodexModelOption
 import com.remodex.mobile.core.model.CodexServiceTier
+import com.remodex.mobile.core.model.CodexThread
 import com.remodex.mobile.core.model.JSONValue
 import com.remodex.mobile.core.persistence.RuntimeSelectionSnapshot
 import kotlinx.coroutines.Dispatchers
@@ -79,6 +81,24 @@ suspend fun CodexService.setSelectedServiceTierForRepository(serviceTier: CodexS
         _selectedServiceTier.value = serviceTier
         persistRuntimeSelection()
     }
+
+suspend fun CodexService.setThreadCollaborationModeForRepository(
+    threadId: String,
+    mode: CodexCollaborationModeKind,
+) = withContext(Dispatchers.IO) {
+    val tid = threadId.trim().takeIf { it.isNotEmpty() } ?: return@withContext
+    val list = _threads.value
+    val idx = list.indexOfFirst { it.id == tid }
+    publishThreads(
+        if (idx >= 0) {
+            list.mapIndexed { i, thread ->
+                if (i == idx) thread.copy(collaborationMode = mode) else thread
+            }
+        } else {
+            list + CodexThread(id = tid, collaborationMode = mode)
+        },
+    )
+}
 
 internal fun CodexService.selectedModelOption(): CodexModelOption? {
     val models = _availableModels.value

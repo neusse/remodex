@@ -153,6 +153,38 @@ class MessageTimelineStoreTest {
         }
 
     @Test
+    fun appendAssistantDelta_continuesOnlyStreamingAssistantWhenLiveItemIdChanges() =
+        runTest {
+            val store = MessageTimelineStore()
+
+            store.appendAssistantDelta(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                itemId = "assistant-temp",
+                delta = "live",
+            )
+            store.appendAssistantDelta(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                itemId = "assistant-real",
+                delta = " text",
+            )
+            store.completeAssistantMessage(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                itemId = "assistant-real",
+                text = "live text final",
+            )
+
+            val messages = store.messagesByThread.value["thread-1"].orEmpty()
+            assertEquals(1, messages.size)
+            assertEquals("live text final", messages.single().text)
+            assertEquals("turn-1", messages.single().turnId)
+            assertEquals("assistant-real", messages.single().itemId)
+            assertEquals(false, messages.single().isStreaming)
+        }
+
+    @Test
     fun appendMirroredUser_mergesPhotoEchoWithDifferentAttachmentMetadata() =
         runTest {
             val store = MessageTimelineStore()
@@ -381,6 +413,51 @@ class MessageTimelineStoreTest {
             assertEquals(2, messages.size)
             assertEquals(CodexMessageRole.user, messages[0].role)
             assertEquals(CodexMessageRole.system, messages[1].role)
+        }
+
+    @Test
+    fun appendMirroredUser_usesCreatedAtWhenTurnIdIsMissing() =
+        runTest {
+            val store = MessageTimelineStore()
+
+            store.completeAssistantMessage(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                itemId = "assistant-1",
+                text = "answer",
+            )
+            store.appendMirroredUser(
+                threadId = "thread-1",
+                turnId = null,
+                text = "hello from desktop",
+                createdAt = Instant.EPOCH,
+            )
+
+            val messages = store.messagesByThread.value["thread-1"].orEmpty()
+            assertEquals(2, messages.size)
+            assertEquals(CodexMessageRole.user, messages[0].role)
+            assertEquals(CodexMessageRole.assistant, messages[1].role)
+        }
+
+    @Test
+    fun appendMirroredUser_withoutTurnOrTimestamp_insertsBeforeActiveAssistantTurn() =
+        runTest {
+            val store = MessageTimelineStore()
+
+            store.ensureStreamingAssistantPlaceholder(
+                threadId = "thread-1",
+                turnId = "turn-1",
+            )
+            store.appendMirroredUser(
+                threadId = "thread-1",
+                turnId = null,
+                text = "hello from desktop",
+            )
+
+            val messages = store.messagesByThread.value["thread-1"].orEmpty()
+            assertEquals(2, messages.size)
+            assertEquals(CodexMessageRole.user, messages[0].role)
+            assertEquals(CodexMessageRole.assistant, messages[1].role)
         }
 
     @Test

@@ -1,6 +1,5 @@
 package com.remodex.mobile.ui.turn
 
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,7 +13,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,8 +21,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
@@ -38,8 +34,8 @@ import com.remodex.mobile.ui.theme.AgentLightColors
 import com.remodex.mobile.ui.theme.RemodexFullAccessIconDark
 import com.remodex.mobile.ui.theme.RemodexFullAccessIconLight
 import com.remodex.mobile.ui.theme.RemodexDropdownMenu
-import com.remodex.mobile.ui.theme.RemodexPopupChrome
 import com.remodex.mobile.ui.theme.isAgentLightChrome
+import com.remodex.mobile.ui.sidebar.remodexFlatControlChrome
 
 /**
  * Single-row controls below attachments, above the composer capsule (Swift [TurnComposerSecondaryBar]).
@@ -91,29 +87,6 @@ internal fun TurnComposerSecondaryBar(
     val agentLightChrome = isAgentLightChrome()
     val envPillShape = RoundedCornerShape(50)
 
-    val envPillBg = RemodexPopupChrome.surfaceColor()
-
-    val envPillChrome: Modifier =
-        if (agentLightChrome) {
-            Modifier
-                .shadow(
-                    elevation = 8.dp,
-                    shape = envPillShape,
-                    ambientColor = Color.Black.copy(alpha = 0.06f),
-                    spotColor = Color.Black.copy(alpha = 0.06f),
-                )
-                .border(RemodexPopupChrome.borderStroke(), envPillShape)
-        } else {
-            Modifier
-                .shadow(
-                    elevation = 3.dp,
-                    shape = envPillShape,
-                    ambientColor = Color.Black.copy(alpha = 0.10f),
-                    spotColor = Color.Black.copy(alpha = 0.10f),
-                )
-                .border(RemodexPopupChrome.borderStroke(), envPillShape)
-        }
-
     val envLabelTint =
         if (agentLightChrome) {
             AgentLightColors.TextSecondary
@@ -144,13 +117,13 @@ internal fun TurnComposerSecondaryBar(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box {
-            Surface(
-                shape = envPillShape,
-                color = envPillBg,
+            Box(
                 modifier =
-                    envPillChrome.clickable {
-                        runtimeMenuExpanded = true
-                    },
+                    Modifier
+                        .remodexFlatControlChrome(envPillShape)
+                        .clickable {
+                            runtimeMenuExpanded = true
+                        },
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
@@ -247,22 +220,22 @@ internal fun TurnComposerSecondaryBar(
                 openPickerRequestKey = openPickerRequestKey,
                 onOpenPickerRequestConsumed = onOpenPickerRequestConsumed,
                 compact = true,
-                modifier = Modifier.widthIn(max = 190.dp),
+                modifier = Modifier.widthIn(max = 156.dp),
             )
         }
 
         Spacer(modifier = Modifier.weight(1f))
 
         Box {
-            Surface(
-                shape = envPillShape,
-                color = envPillBg,
+            Box(
                 modifier =
-                    envPillChrome.clickable(enabled = accessPickerEnabled) {
-                        if (accessPickerEnabled) {
-                            accessMenuExpanded = true
-                        }
-                    },
+                    Modifier
+                        .remodexFlatControlChrome(envPillShape)
+                        .clickable(enabled = accessPickerEnabled) {
+                            if (accessPickerEnabled) {
+                                accessMenuExpanded = true
+                            }
+                        },
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),

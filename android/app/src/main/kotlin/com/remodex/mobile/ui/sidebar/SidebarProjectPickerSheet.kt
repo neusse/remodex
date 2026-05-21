@@ -2,23 +2,29 @@ package com.remodex.mobile.ui.sidebar
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.CreateNewFolder
@@ -44,13 +50,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import com.composables.icons.lucide.R as LucideR
+import com.remodex.mobile.AppContainer
 import com.remodex.mobile.R
 import com.remodex.mobile.core.model.CodexProjectDirectoryEntry
 import com.remodex.mobile.core.model.CodexProjectDirectoryListing
@@ -67,6 +77,11 @@ private enum class NewThreadSessionType {
     LocalWorkspace,
     CloudOnly,
 }
+
+private val NewThreadFloatingCtaHeight = 54.dp
+private val NewThreadFloatingCtaBottomPadding = 18.dp
+private val NewThreadListBottomInset =
+    NewThreadFloatingCtaHeight + NewThreadFloatingCtaBottomPadding + 12.dp
 
 private data class NewThreadWorkspaceSummary(
     val name: String,
@@ -133,6 +148,11 @@ fun SidebarProjectPickerSheet(
         scope.launch {
             try {
                 onStartThread(cwd)
+                AppContainer.betaEngagementRepository.recordMissionEvent(
+                    eventType = "project_thread_started",
+                    screen = "sidebar",
+                    refreshAfter = false,
+                )
                 closeSheet()
                 onThreadStarted()
             } catch (e: Exception) {
@@ -153,6 +173,11 @@ fun SidebarProjectPickerSheet(
         scope.launch {
             try {
                 onStartThread(null)
+                AppContainer.betaEngagementRepository.recordMissionEvent(
+                    eventType = "project_thread_started",
+                    screen = "sidebar",
+                    refreshAfter = false,
+                )
                 closeSheet()
                 onThreadStarted()
             } catch (e: Exception) {
@@ -288,172 +313,216 @@ fun SidebarProjectPickerSheet(
             }
         val quickLocationChips = quickLocations.preferredQuickLocations()
 
-        LazyColumn(
+        Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.9f),
-            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                    .fillMaxHeight(),
         ) {
-            item {
-                NewThreadHeader(
-                    colors = colors,
-                    startBusy = startBusy,
-                    onCancel = { closeSheet() },
-                )
-            }
-
-            item {
-                CurrentWorkspaceSection(
-                    workspace = currentWorkspace,
-                    colors = colors,
-                    enabled = !startBusy && !noCwdBusy && !createBusy && currentWorkspace != null,
-                    busy = startBusy && startingPath == currentWorkspace?.path,
-                    onStart = {
-                        currentWorkspace?.path?.let { startChat(it) }
-                    },
-                )
-            }
-
-            item {
-                SessionTypeSelector(
-                    selected = sessionType,
-                    colors = colors,
-                    cloudBusy = noCwdBusy,
-                    enabled = !startBusy && !createBusy,
-                    onSelected = { sessionType = it },
-                    onStartCloud = { startCloudChat() },
-                )
-            }
-
-            if (visibleRecentWorkspaces.isNotEmpty()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding =
+                    PaddingValues(
+                        start = 18.dp,
+                        end = 18.dp,
+                        bottom = NewThreadListBottomInset,
+                    ),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
                 item {
-                    SectionLabel(
-                        text = stringResource(R.string.sidebar_project_picker_recent_workspaces),
+                    NewThreadHeader(
                         colors = colors,
-                        actionText = stringResource(R.string.sidebar_project_picker_view_all).takeIf {
-                            recentWorkspaces.size > 3 && !showAllRecentWorkspaces
-                        },
-                        onAction = { showAllRecentWorkspaces = true },
+                        startBusy = startBusy,
+                        onCancel = { closeSheet() },
                     )
                 }
-                items(visibleRecentWorkspaces, key = { "recent-${it.path}" }) { workspace ->
-                    WorkspaceRow(
-                        workspace = workspace,
+
+                item {
+                    NewThreadStepper(colors = colors)
+                }
+
+                item {
+                    CurrentWorkspaceSection(
+                        workspace = currentWorkspace,
                         colors = colors,
                         enabled = !startBusy && !noCwdBusy && !createBusy,
-                        busy = startBusy && startingPath == workspace.path,
-                        onClick = { startChat(workspace.path) },
                     )
                 }
-            }
 
-            item {
-                BrowseWorkspaceSection(
-                    currentPath = currentPath,
-                    parentPath = listing?.parentPath,
-                    quickLocations = quickLocationChips,
-                    query = searchQuery,
-                    colors = colors,
-                    enabled = !startBusy && !noCwdBusy && !createBusy,
-                    onQueryChange = { searchQuery = it },
-                    onQuickLocation = { startChat(it.path) },
-                    onParent = { parent -> selectFolder(parent) },
-                )
-            }
-
-            if (loadingError != null || startError != null) {
                 item {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        loadingError?.let { error ->
-                            Text(
-                                text = error,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                        startError?.let { error ->
-                            Text(
-                                text = error,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
+                    SessionTypeSelector(
+                        selected = sessionType,
+                        colors = colors,
+                        cloudBusy = noCwdBusy,
+                        enabled = !startBusy && !createBusy,
+                        onSelected = { sessionType = it },
+                    )
                 }
-            }
 
-            item {
-                CreateFolderField(
-                    value = createName,
-                    colors = colors,
-                    enabled = !createBusy && !startBusy && currentPath.isNotBlank(),
-                    busy = createBusy,
-                    onValueChange = { createName = it },
-                    onCreate = { createFolder() },
-                )
-            }
+                item {
+                    NewThreadPreviewSection(
+                        workspace = currentWorkspace,
+                        sessionType = sessionType,
+                        colors = colors,
+                    )
+                }
 
-            item {
-                SectionLabel(
-                    text =
-                        if (searchingFolders) {
-                            stringResource(R.string.sidebar_project_picker_search_results)
-                        } else {
-                            stringResource(R.string.sidebar_project_picker_subfolders)
-                        },
-                    colors = colors,
-                    actionText =
-                        if (!searchingFolders) {
-                            if (folderListCollapsed) {
-                                stringResource(R.string.sidebar_project_picker_show)
-                            } else {
-                                stringResource(R.string.sidebar_project_picker_hide)
-                            }
-                        } else {
-                            null
-                        },
-                    onAction = { foldersCollapsed = !foldersCollapsed },
-                )
-            }
-
-            if (!folderListCollapsed) {
-                if (visibleEntries.isEmpty()) {
+                if (visibleRecentWorkspaces.isNotEmpty()) {
                     item {
-                        Text(
-                            text =
-                                if (searchingFolders) {
-                                    stringResource(R.string.sidebar_project_picker_empty_search)
-                                } else {
-                                    stringResource(R.string.sidebar_project_picker_empty_folder)
-                                },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.secondaryText,
-                            modifier = Modifier.padding(vertical = 6.dp),
+                        SectionLabel(
+                            text = stringResource(R.string.sidebar_project_picker_recent_workspaces),
+                            colors = colors,
+                            actionText = stringResource(R.string.sidebar_project_picker_view_all).takeIf {
+                                recentWorkspaces.size > 3 && !showAllRecentWorkspaces
+                            },
+                            onAction = { showAllRecentWorkspaces = true },
                         )
                     }
-                } else {
-                    items(visibleEntries, key = { "folder-${it.id}" }) { entry ->
-                        FolderRow(
-                            entry = entry,
-                            colors = colors,
-                            enabled = !startBusy && !createBusy,
-                            onClick = { selectFolder(entry.path) },
-                        )
+                    item {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding = PaddingValues(end = 2.dp),
+                        ) {
+                            items(visibleRecentWorkspaces, key = { "recent-${it.path}" }) { workspace ->
+                                WorkspaceRow(
+                                    workspace = workspace,
+                                    colors = colors,
+                                    enabled = !startBusy && !noCwdBusy && !createBusy,
+                                    busy = false,
+                                    selected = workspace.path == currentWorkspace?.path,
+                                    onClick = { selectFolder(workspace.path) },
+                                    modifier = Modifier.width(174.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    BrowseWorkspaceSection(
+                        currentPath = currentPath,
+                        parentPath = listing?.parentPath,
+                        quickLocations = quickLocationChips,
+                        query = searchQuery,
+                        colors = colors,
+                        enabled = !startBusy && !noCwdBusy && !createBusy,
+                        onQueryChange = { searchQuery = it },
+                        onQuickLocation = { selectFolder(it.path) },
+                        onParent = { parent -> selectFolder(parent) },
+                    )
+                }
+
+                if (loadingError != null || startError != null) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            loadingError?.let { error ->
+                                Text(
+                                    text = error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                            startError?.let { error ->
+                                Text(
+                                    text = error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    CreateFolderField(
+                        value = createName,
+                        colors = colors,
+                        enabled = !createBusy && !startBusy && currentPath.isNotBlank(),
+                        busy = createBusy,
+                        onValueChange = { createName = it },
+                        onCreate = { createFolder() },
+                    )
+                }
+
+                item {
+                    SectionLabel(
+                        text =
+                            if (searchingFolders) {
+                                stringResource(R.string.sidebar_project_picker_search_results)
+                            } else {
+                                stringResource(R.string.sidebar_project_picker_subfolders)
+                            },
+                        colors = colors,
+                        actionText =
+                            if (!searchingFolders) {
+                                if (folderListCollapsed) {
+                                    stringResource(R.string.sidebar_project_picker_show)
+                                } else {
+                                    stringResource(R.string.sidebar_project_picker_hide)
+                                }
+                            } else {
+                                null
+                            },
+                        onAction = { foldersCollapsed = !foldersCollapsed },
+                    )
+                }
+
+                if (!folderListCollapsed) {
+                    if (visibleEntries.isEmpty()) {
+                        item {
+                            Text(
+                                text =
+                                    if (searchingFolders) {
+                                        stringResource(R.string.sidebar_project_picker_empty_search)
+                                    } else {
+                                        stringResource(R.string.sidebar_project_picker_empty_folder)
+                                    },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.secondaryText,
+                                modifier = Modifier.padding(vertical = 6.dp),
+                            )
+                        }
+                    } else {
+                        items(visibleEntries, key = { "folder-${it.id}" }) { entry ->
+                            FolderRow(
+                                entry = entry,
+                                colors = colors,
+                                enabled = !startBusy && !createBusy,
+                                onClick = { selectFolder(entry.path) },
+                            )
+                        }
                     }
                 }
             }
-
-            item {
-                StartSelectedFolderRow(
-                    path = normalizedPath(),
-                    colors = colors,
-                    enabled = !startBusy && !createBusy && normalizedPath().isNotBlank(),
-                    busy = startBusy && startingPath == normalizedPath(),
-                    onClick = { startChat(normalizedPath()) },
-                )
-            }
+            NewThreadFloatingCtas(
+                colors = colors,
+                sessionType = sessionType,
+                enabled =
+                    !startBusy &&
+                        !createBusy &&
+                        when (sessionType) {
+                            NewThreadSessionType.LocalWorkspace -> normalizedPath().isNotBlank()
+                            NewThreadSessionType.CloudOnly -> true
+                        },
+                busy = startBusy || noCwdBusy,
+                onCancel = { closeSheet() },
+                onCreate = {
+                    when (sessionType) {
+                        NewThreadSessionType.LocalWorkspace -> startChat(normalizedPath())
+                        NewThreadSessionType.CloudOnly -> startCloudChat()
+                    }
+                },
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .zIndex(1f)
+                        .padding(
+                            start = 18.dp,
+                            end = 18.dp,
+                            bottom = NewThreadFloatingCtaBottomPadding,
+                        ),
+            )
         }
     }
 }
@@ -465,35 +534,145 @@ private fun NewThreadHeader(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier =
+                    Modifier
+                        .width(42.dp)
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(colors.primaryText.copy(alpha = 0.78f)),
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.sidebar_project_picker_title),
+                    style =
+                        MaterialTheme.typography.headlineSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.sp,
+                        ),
+                    color = colors.primaryText,
+                )
+                Text(
+                    text = stringResource(R.string.sidebar_project_picker_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.secondaryText,
+                )
+            }
+            IconButton(
+                onClick = onCancel,
+                enabled = !startBusy,
+                modifier = Modifier.size(36.dp),
+            ) {
+                Icon(
+                    painter = painterResource(LucideR.drawable.lucide_ic_x),
+                    contentDescription = stringResource(android.R.string.cancel),
+                    tint = colors.primaryText,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NewThreadStepper(
+    colors: SidebarColorPalette,
+    modifier: Modifier = Modifier,
+) {
+    val steps =
+        listOf(
+            stringResource(R.string.sidebar_project_picker_step_workspace),
+            stringResource(R.string.sidebar_project_picker_step_mode),
+            stringResource(R.string.sidebar_project_picker_step_launch),
+        )
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.sidebar_project_picker_title),
-                style = MaterialTheme.typography.titleLarge,
-                color = colors.primaryText,
+        steps.forEachIndexed { index, label ->
+            StepIndicator(
+                number = index + 1,
+                label = label,
+                active = index == 0,
+                colors = colors,
+                modifier = Modifier.weight(1f),
             )
-            Text(
-                text = stringResource(R.string.sidebar_project_picker_subtitle),
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.secondaryText,
-            )
+            if (index < steps.lastIndex) {
+                Box(
+                    modifier =
+                        Modifier
+                            .weight(0.7f)
+                            .padding(top = 16.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(colors.border),
+                    )
+                }
+            }
         }
-        TextButton(
-            onClick = onCancel,
-            enabled = !startBusy,
+    }
+}
+
+@Composable
+private fun StepIndicator(
+    number: Int,
+    label: String,
+    active: Boolean,
+    colors: SidebarColorPalette,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Surface(
+            modifier = Modifier.size(34.dp),
+            shape = RoundedCornerShape(999.dp),
+            color = if (active) colors.primaryText else colors.surface,
+            border = BorderStroke(1.dp, if (active) colors.primaryText else colors.border),
         ) {
-            Text(
-                text = stringResource(android.R.string.cancel),
-                color = colors.primaryText,
-            )
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = number.toString(),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                    color = if (active) colors.background else colors.primaryText,
+                )
+            }
         }
+        Text(
+            text = label,
+            style =
+                MaterialTheme.typography.labelMedium.copy(
+                    fontSize = 12.sp,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                ),
+            color = if (active) colors.primaryText else colors.secondaryText,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -502,16 +681,15 @@ private fun CurrentWorkspaceSection(
     workspace: NewThreadWorkspaceSummary?,
     colors: SidebarColorPalette,
     enabled: Boolean,
-    busy: Boolean,
-    onStart: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        SectionLabel(
-            text = stringResource(R.string.sidebar_project_picker_current_workspace),
+        SectionHeading(
+            title = "1. ${stringResource(R.string.sidebar_project_picker_current_workspace)}",
+            subtitle = stringResource(R.string.sidebar_project_picker_current_workspace_hint),
             colors = colors,
         )
         if (workspace == null) {
@@ -526,8 +704,7 @@ private fun CurrentWorkspaceSection(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .border(1.dp, colors.border, RoundedCornerShape(12.dp))
-                        .clickable(enabled = enabled && !busy, onClick = onStart),
+                        .border(1.dp, colors.border, RoundedCornerShape(12.dp)),
                 shape = RoundedCornerShape(12.dp),
                 color = colors.selectedRow,
                 tonalElevation = 1.dp,
@@ -568,16 +745,7 @@ private fun CurrentWorkspaceSection(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    if (busy) {
-                        BusyIndicator(colors = colors)
-                    } else {
-                        Text(
-                            text = stringResource(R.string.sidebar_project_picker_start_here),
-                            style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp),
-                            color = colors.primaryText,
-                            maxLines = 1,
-                        )
-                    }
+                    CheckBubble(colors = colors, selected = enabled)
                 }
             }
         }
@@ -591,77 +759,53 @@ private fun SessionTypeSelector(
     cloudBusy: Boolean,
     enabled: Boolean,
     onSelected: (NewThreadSessionType) -> Unit,
-    onStartCloud: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        SectionLabel(
-            text = stringResource(R.string.sidebar_project_picker_session_type),
+        SectionHeading(
+            title = "2. ${stringResource(R.string.sidebar_project_picker_session_type)}",
+            subtitle = stringResource(R.string.sidebar_project_picker_session_type_hint),
             colors = colors,
         )
         Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .border(1.dp, colors.border, RoundedCornerShape(10.dp))
-                    .background(colors.surface)
-                    .padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            SessionTypeSegment(
-                text = stringResource(R.string.sidebar_project_picker_session_local),
+            SessionModeCard(
+                title = stringResource(R.string.sidebar_project_picker_session_local),
+                body = stringResource(R.string.sidebar_project_picker_session_local_desc),
+                icon = LucideR.drawable.lucide_ic_laptop,
                 selected = selected == NewThreadSessionType.LocalWorkspace,
                 colors = colors,
-                enabled = enabled,
+                enabled = enabled && !cloudBusy,
                 onClick = { onSelected(NewThreadSessionType.LocalWorkspace) },
                 modifier = Modifier.weight(1f),
             )
-            SessionTypeSegment(
-                text = stringResource(R.string.sidebar_project_picker_session_cloud),
+            SessionModeCard(
+                title = stringResource(R.string.sidebar_project_picker_session_cloud),
+                body = stringResource(R.string.sidebar_project_picker_session_cloud_desc),
+                icon = LucideR.drawable.lucide_ic_cloud,
                 selected = selected == NewThreadSessionType.CloudOnly,
                 colors = colors,
-                enabled = enabled,
+                enabled = enabled && !cloudBusy,
                 onClick = { onSelected(NewThreadSessionType.CloudOnly) },
                 modifier = Modifier.weight(1f),
             )
         }
-        if (selected == NewThreadSessionType.CloudOnly) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.sidebar_project_picker_no_project_desc),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.secondaryText,
-                )
-                TextButton(
-                    onClick = onStartCloud,
-                    enabled = enabled && !cloudBusy,
-                ) {
-                    if (cloudBusy) {
-                        BusyIndicator(colors = colors)
-                    } else {
-                        Text(
-                            text = stringResource(R.string.sidebar_project_picker_start_cloud),
-                            color = colors.primaryText,
-                        )
-                    }
-                }
-            }
+        if (cloudBusy) {
+            BusyIndicator(colors = colors)
         }
     }
 }
 
 @Composable
-private fun SessionTypeSegment(
-    text: String,
+private fun SessionModeCard(
+    title: String,
+    body: String,
+    icon: Int,
     selected: Boolean,
     colors: SidebarColorPalette,
     enabled: Boolean,
@@ -671,27 +815,171 @@ private fun SessionTypeSegment(
     Surface(
         modifier =
             modifier
-                .height(34.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .height(132.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .border(
+                    width = if (selected) 1.5.dp else 1.dp,
+                    color = if (selected) colors.primaryText else colors.border,
+                    shape = RoundedCornerShape(12.dp),
+                )
                 .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(12.dp),
         color = if (selected) colors.selectedRow else Color.Transparent,
     ) {
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center,
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconBadge(
+                    icon = icon,
+                    colors = colors,
+                    selected = selected,
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                CheckBubble(colors = colors, selected = selected)
+            }
             Text(
-                text = text,
-                style =
-                    MaterialTheme.typography.labelLarge.copy(
-                        fontSize = 12.sp,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    ),
-                color = if (selected) colors.primaryText else colors.secondaryText,
+                text = title,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.primaryText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 17.sp),
+                color = colors.secondaryText,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NewThreadPreviewSection(
+    workspace: NewThreadWorkspaceSummary?,
+    sessionType: NewThreadSessionType,
+    colors: SidebarColorPalette,
+    modifier: Modifier = Modifier,
+) {
+    val mode =
+        when (sessionType) {
+            NewThreadSessionType.LocalWorkspace -> stringResource(R.string.sidebar_project_picker_session_local)
+            NewThreadSessionType.CloudOnly -> stringResource(R.string.sidebar_project_picker_session_cloud)
+        }
+    val workspaceName =
+        when (sessionType) {
+            NewThreadSessionType.LocalWorkspace ->
+                workspace?.name ?: stringResource(R.string.sidebar_project_picker_preview_none)
+            NewThreadSessionType.CloudOnly -> stringResource(R.string.sidebar_project_picker_preview_none)
+        }
+    val branch =
+        when (sessionType) {
+            NewThreadSessionType.LocalWorkspace ->
+                workspace?.metadata?.substringBefore(" · ")?.takeIf { it != "Local" }
+                    ?: stringResource(R.string.sidebar_project_picker_preview_none)
+            NewThreadSessionType.CloudOnly -> stringResource(R.string.sidebar_project_picker_preview_none)
+        }
+    val location =
+        when (sessionType) {
+            NewThreadSessionType.LocalWorkspace ->
+                workspace?.path?.let { "Local (${it.compactMiddle()})" }
+                    ?: stringResource(R.string.sidebar_project_picker_preview_none)
+            NewThreadSessionType.CloudOnly -> stringResource(R.string.sidebar_project_picker_session_cloud)
+        }
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        SectionHeading(
+            title = "3. ${stringResource(R.string.sidebar_project_picker_preview_title)}",
+            subtitle = stringResource(R.string.sidebar_project_picker_preview_hint),
+            colors = colors,
+        )
+        Surface(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(1.dp, colors.border, RoundedCornerShape(12.dp)),
+            shape = RoundedCornerShape(12.dp),
+            color = colors.surface,
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                PreviewRow(
+                    icon = LucideR.drawable.lucide_ic_laptop,
+                    label = stringResource(R.string.sidebar_project_picker_preview_workspace),
+                    value = workspaceName,
+                    colors = colors,
+                )
+                PreviewRow(
+                    icon = LucideR.drawable.lucide_ic_cloud,
+                    label = stringResource(R.string.sidebar_project_picker_preview_mode),
+                    value = mode,
+                    colors = colors,
+                )
+                PreviewRow(
+                    icon = LucideR.drawable.lucide_ic_git_branch,
+                    label = stringResource(R.string.sidebar_project_picker_preview_branch),
+                    value = branch,
+                    colors = colors,
+                )
+                PreviewRow(
+                    icon = LucideR.drawable.lucide_ic_laptop,
+                    label = stringResource(R.string.sidebar_project_picker_preview_location),
+                    value = location,
+                    colors = colors,
+                    showDivider = false,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewRow(
+    icon: Int,
+    label: String,
+    value: String,
+    colors: SidebarColorPalette,
+    modifier: Modifier = Modifier,
+    showDivider: Boolean = true,
+) {
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                tint = colors.primaryText,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.secondaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.primaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (showDivider) {
+            HorizontalDivider(color = colors.border, thickness = 0.5.dp)
         }
     }
 }
@@ -801,17 +1089,18 @@ private fun WorkspaceRow(
     colors: SidebarColorPalette,
     enabled: Boolean,
     busy: Boolean,
+    selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
         modifier =
             modifier
-                .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
+                .border(1.dp, if (selected) colors.primaryText else colors.border, RoundedCornerShape(10.dp))
                 .clickable(enabled = enabled && !busy, onClick = onClick),
         shape = RoundedCornerShape(10.dp),
-        color = colors.surface,
+        color = if (selected) colors.selectedRow else colors.surface,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
@@ -840,6 +1129,8 @@ private fun WorkspaceRow(
             }
             if (busy) {
                 BusyIndicator(colors = colors)
+            } else if (selected) {
+                CheckBubble(colors = colors, selected = true, modifier = Modifier.size(22.dp))
             } else {
                 workspace.relativeTime?.let { relative ->
                     Text(
@@ -964,57 +1255,118 @@ private fun CreateFolderField(
 }
 
 @Composable
-private fun StartSelectedFolderRow(
-    path: String,
+private fun NewThreadFloatingCtas(
     colors: SidebarColorPalette,
+    sessionType: NewThreadSessionType,
     enabled: Boolean,
     busy: Boolean,
-    onClick: () -> Unit,
+    onCancel: () -> Unit,
+    onCreate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .border(1.dp, colors.border, RoundedCornerShape(12.dp))
-                .clickable(enabled = enabled && !busy, onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = colors.surface,
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        Surface(
+            modifier =
+                Modifier
+                    .height(NewThreadFloatingCtaHeight)
+                    .weight(0.82f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(1.dp, colors.border, RoundedCornerShape(12.dp))
+                    .clickable(enabled = !busy, onClick = onCancel),
+            shape = RoundedCornerShape(12.dp),
+            color = colors.background,
+            shadowElevation = 6.dp,
         ) {
-            if (busy) {
-                BusyIndicator(colors = colors)
-            } else {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = null,
-                    tint = colors.primaryText,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
+            Box(contentAlignment = Alignment.Center) {
                 Text(
-                    text = stringResource(R.string.sidebar_project_picker_start_selected),
-                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp),
+                    text = stringResource(android.R.string.cancel),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                     color = colors.primaryText,
-                )
-                Text(
-                    text = path,
-                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp),
-                    color = colors.secondaryText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
+        Surface(
+            modifier =
+                Modifier
+                    .height(NewThreadFloatingCtaHeight)
+                    .weight(1.18f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(enabled = enabled && !busy, onClick = onCreate),
+            shape = RoundedCornerShape(12.dp),
+            color = if (enabled) colors.primaryText else colors.surface,
+            shadowElevation = 6.dp,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                if (busy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = colors.background,
+                        trackColor = colors.secondaryText,
+                    )
+                } else {
+                    if (sessionType == NewThreadSessionType.CloudOnly) {
+                        Icon(
+                            painter = painterResource(LucideR.drawable.lucide_ic_cloud),
+                            contentDescription = null,
+                            tint = if (enabled) colors.background else colors.secondaryText,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = null,
+                            tint = if (enabled) colors.background else colors.secondaryText,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(9.dp))
+                    Text(
+                        text = stringResource(R.string.sidebar_project_picker_start_selected),
+                        style =
+                            MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 15.sp,
+                            ),
+                        color = if (enabled) colors.background else colors.secondaryText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeading(
+    title: String,
+    subtitle: String,
+    colors: SidebarColorPalette,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            color = colors.primaryText,
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.secondaryText,
+        )
     }
 }
 
@@ -1051,6 +1403,55 @@ private fun SectionLabel(
                     text = actionText,
                     style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp),
                     color = colors.secondaryText,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IconBadge(
+    icon: Int,
+    colors: SidebarColorPalette,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.size(38.dp),
+        shape = RoundedCornerShape(999.dp),
+        color = if (selected) colors.primaryText else colors.surface,
+        border = BorderStroke(1.dp, colors.border),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                tint = if (selected) colors.background else colors.primaryText,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CheckBubble(
+    colors: SidebarColorPalette,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.size(28.dp),
+        shape = RoundedCornerShape(999.dp),
+        color = if (selected) colors.primaryText else Color.Transparent,
+        border = BorderStroke(1.dp, if (selected) colors.primaryText else colors.border),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = colors.background,
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }
@@ -1147,6 +1548,12 @@ private fun recentWorkspaceSummaries(
 
 private fun workspaceMetadata(branch: String?): String =
     listOfNotNull(branch?.trim()?.takeIf { it.isNotEmpty() }, "Local").joinToString(" \u00B7 ")
+
+private fun String.compactMiddle(maxLength: Int = 26): String {
+    if (length <= maxLength) return this
+    val edge = (maxLength - 1) / 2
+    return take(edge) + "..." + takeLast(edge)
+}
 
 private fun CodexThread.workspaceBranch(): String? =
     firstMetadataString(

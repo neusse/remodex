@@ -40,8 +40,8 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        versionCode = 13
-        versionName = "0.1.5"
+        versionCode = 15
+        versionName = "0.1.7"
         buildConfigField("boolean", "BETA_ENABLED", betaEnabled.toString())
         buildConfigField("String", "BETA_API_BASE_URL", quotedBuildConfigString(betaApiBaseUrl))
         buildConfigField("String", "BETA_API_KEY", quotedBuildConfigString(betaApiKey))
@@ -121,6 +121,7 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.webkit:webkit:1.12.1")
+    implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")

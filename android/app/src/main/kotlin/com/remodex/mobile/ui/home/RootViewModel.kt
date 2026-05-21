@@ -55,7 +55,8 @@ class RootViewModel(
     }
 
     private fun computeInitialPhase(): RootPhase {
-        if (!onboardingPreferences.hasSeenOnboarding()) {
+        // TODO: set to false after onboarding UI QA — restores one-time first-run flow.
+        if (FORCE_ONBOARDING_ON_EVERY_COLD_START || !onboardingPreferences.hasSeenOnboarding()) {
             return RootPhase.Onboarding
         }
         if (!hasRelayPairing()) {
@@ -71,6 +72,13 @@ class RootViewModel(
 
     fun finishOnboarding() {
         onboardingPreferences.setHasSeenOnboarding(true)
+        viewModelScope.launch {
+            AppContainer.betaEngagementRepository.recordMissionEvent(
+                eventType = "onboarding_completed",
+                screen = "onboarding",
+                refreshAfter = false,
+            )
+        }
         _phase.value = RootPhase.PairingScan
     }
 
@@ -328,6 +336,9 @@ class RootViewModel(
     }
 
     companion object {
+        /** When true, always open the 5-step onboarding on process start (QA only). */
+        private const val FORCE_ONBOARDING_ON_EVERY_COLD_START = true
+
         private const val AUTO_RECONNECT_AFTER_DROP_DELAY_MS = 1_000L
         private const val AUTO_RECONNECT_MIN_INTERVAL_MS = 5_000L
 

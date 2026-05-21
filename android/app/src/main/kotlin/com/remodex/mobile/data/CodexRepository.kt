@@ -22,7 +22,10 @@ import com.remodex.mobile.core.model.RPCMessage
 import com.remodex.mobile.core.model.ThreadHistoryPaginationState
 import com.remodex.mobile.core.model.UsageStatusRefreshPolicy
 import com.remodex.mobile.core.transport.ConnectionState
+import com.remodex.mobile.core.model.GitStackedActionProgressEvent
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * Facade for bridge WebSocket, secure transport, and JSON-RPC.
@@ -156,6 +159,12 @@ interface CodexRepository {
     suspend fun setSelectedAccessMode(accessMode: CodexAccessMode)
 
     suspend fun setSelectedServiceTier(serviceTier: CodexServiceTier?)
+
+    /** Persists the composer collaboration mode as thread-local UI/runtime state. */
+    suspend fun setThreadCollaborationMode(
+        threadId: String,
+        mode: CodexCollaborationModeKind,
+    ) = Unit
 
     suspend fun resolvePendingApproval(
         requestId: String,
@@ -309,4 +318,8 @@ interface CodexRepository {
         method: String,
         params: JSONValue?,
     )
+
+    /** Progress events for in-flight `git/runStackedAction` (`git/stackedAction/progress`). */
+    val gitStackedActionProgress: Flow<GitStackedActionProgressEvent>
+        get() = emptyFlow()
 }

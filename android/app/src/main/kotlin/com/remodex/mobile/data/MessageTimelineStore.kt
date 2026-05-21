@@ -577,10 +577,16 @@ internal class MessageTimelineStore(
                             turnId = resolvedTurnId,
                             itemId = resolvedItemId,
                         )
-            }
-            if (idx >= 0) {
-                val m = list[idx]
-                list[idx] =
+                }
+            val targetIdx =
+                if (idx >= 0) {
+                    idx
+                } else {
+                    findSingleStreamingAssistantFallbackIndex(list, resolvedTurnId)
+                }
+            if (targetIdx >= 0) {
+                val m = list[targetIdx]
+                list[targetIdx] =
                     m.copy(
                         text = m.text + delta,
                         assistantPhase = assistantPhase ?: m.assistantPhase,
@@ -606,6 +612,20 @@ internal class MessageTimelineStore(
             map[threadId] = list
             publishMessages(map)
         }
+    }
+
+    private fun findSingleStreamingAssistantFallbackIndex(
+        list: List<CodexMessage>,
+        turnId: String?,
+    ): Int {
+        val candidates =
+            list.withIndex().filter { (_, message) ->
+                message.role == CodexMessageRole.assistant &&
+                    message.kind == CodexMessageKind.chat &&
+                    message.isStreaming &&
+                    (turnId == null || message.turnId == null || message.turnId == turnId)
+            }
+        return candidates.singleOrNull()?.index ?: -1
     }
 
     suspend fun ensureStreamingAssistantPlaceholder(
@@ -912,10 +932,12 @@ internal class MessageTimelineStore(
         turnId: String?,
         text: String,
         attachments: List<CodexImageAttachment> = emptyList(),
+        createdAt: Instant? = null,
     ) {
         val t = text.trim()
         val normalizedText = normalizedMessageText(t)
         if (t.isEmpty() && attachments.isEmpty()) return
+        val messageCreatedAt = createdAt ?: Instant.now()
         mutex.withLock {
             val map = _messagesByThread.value.toMutableMap()
             val list = map[threadId].orEmpty().toMutableList()
@@ -942,12 +964,11 @@ internal class MessageTimelineStore(
                 }
             } else {
                 val insertionIndex =
-                    turnId
-                        ?.let { resolvedTurnId ->
-                            list.indexOfFirst { message ->
-                                message.turnId == resolvedTurnId && message.role != CodexMessageRole.user
-                            }.takeIf { it >= 0 }
-                        }
+                    userMirrorInsertionIndex(
+                        list = list,
+                        turnId = turnId,
+                        createdAt = createdAt,
+                    )
                         ?: list.size
                 list.add(
                     insertionIndex,
@@ -956,7 +977,7 @@ internal class MessageTimelineStore(
                         role = CodexMessageRole.user,
                         kind = CodexMessageKind.chat,
                         text = t,
-                        createdAt = Instant.now(),
+                        createdAt = messageCreatedAt,
                         turnId = turnId,
                         deliveryState = CodexMessageDeliveryState.confirmed,
                         isStreaming = false,
@@ -970,6 +991,40 @@ internal class MessageTimelineStore(
             map[threadId] = list
             publishMessages(map)
         }
+    }
+
+    private fun userMirrorInsertionIndex(
+        list: List<CodexMessage>,
+        turnId: String?,
+        createdAt: Instant?,
+    ): Int? {
+        turnId
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { resolvedTurnId ->
+                list.indexOfFirst { message ->
+                    message.turnId == resolvedTurnId && message.role != CodexMessageRole.user
+                }.takeIf { it >= 0 }?.let { return it }
+            }
+        createdAt?.let { eventTime ->
+            list.indexOfFirst { message ->
+                message.role != CodexMessageRole.user && message.createdAt.isAfter(eventTime)
+            }.takeIf { it >= 0 }?.let { return it }
+        }
+        val latestActiveTurnId =
+            list.asReversed()
+                .firstOrNull { message ->
+                    message.role != CodexMessageRole.user &&
+                        (message.isStreaming || message.kind == CodexMessageKind.thinking) &&
+                        !message.turnId.isNullOrBlank()
+                }
+                ?.turnId
+        latestActiveTurnId?.let { activeTurnId ->
+            list.indexOfFirst { message ->
+                message.turnId == activeTurnId && message.role != CodexMessageRole.user
+            }.takeIf { it >= 0 }?.let { return it }
+        }
+        return null
     }
 
     suspend fun attachLatestTurnlessUserMessageToTurn(

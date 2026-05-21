@@ -2,37 +2,37 @@ package com.remodex.mobile.terminal
 
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,13 +42,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.remodex.mobile.AppContainer
+import com.remodex.mobile.ui.sidebar.RemodexCircleIconButton
+import com.remodex.mobile.ui.sidebar.rememberSidebarColorPalette
+import com.remodex.mobile.ui.sidebar.remodexFlatControlChrome
 import com.remodex.mobile.ui.theme.RemodexPopupSurface
 import kotlinx.coroutines.launch
 
@@ -159,55 +165,96 @@ fun TerminalScreen(
     val connected = selectedSession?.status == TerminalStatus.Connected
     var showSessions by remember { mutableStateOf(false) }
     var showWindowsHelp by remember { mutableStateOf(false) }
+    val colors = rememberSidebarColorPalette()
     val title =
         when (state.surface) {
             TerminalSurface.Profiles -> "Terminal"
             TerminalSurface.Editor -> if (state.editor?.id == null) "New profile" else "Edit profile"
             TerminalSurface.Session -> selectedProfile?.displayLabel ?: "Terminal"
         }
+    val onBack =
+        when (state.surface) {
+            TerminalSurface.Profiles -> onNavigateBack
+            TerminalSurface.Editor -> onCancelEditor
+            TerminalSurface.Session -> onCloseSelectedSession
+        }
 
     Scaffold(
         modifier = modifier,
+        containerColor = colors.background,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text(title)
+                        Text(
+                            text = title,
+                            style =
+                                MaterialTheme.typography.titleLarge.copy(
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                            color = colors.primaryText,
+                        )
                         if (state.surface == TerminalSurface.Session && selectedProfile != null) {
                             Text(
                                 text = "${selectedSession?.status?.name ?: TerminalStatus.Idle.name} - ${selectedProfile.username}@${selectedProfile.host}:${selectedProfile.port}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = colors.secondaryText,
                             )
                         }
                     }
                 },
                 navigationIcon = {
-                    IconButton(
-                        onClick =
-                            when (state.surface) {
-                                TerminalSurface.Profiles -> onNavigateBack
-                                TerminalSurface.Editor -> onCancelEditor
-                                TerminalSurface.Session -> onCloseSelectedSession
-                            },
+                    RemodexCircleIconButton(
+                        onClick = onBack,
+                        contentDescription = "Back",
+                        colors = colors,
                     ) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = colors.primaryText,
+                        )
                     }
                 },
                 actions = {
                     if (state.surface == TerminalSurface.Profiles) {
-                        TextButton(onClick = { showWindowsHelp = true }) { Text("Help") }
+                        TerminalTopBarAction(
+                            text = "Help",
+                            onClick = { showWindowsHelp = true },
+                        )
                     }
                     if (state.surface == TerminalSurface.Session) {
-                        TextButton(onClick = { showWindowsHelp = true }) { Text("Help") }
-                        TextButton(onClick = { showSessions = !showSessions }) { Text("Sessions") }
+                        TerminalTopBarAction(
+                            text = "Help",
+                            onClick = { showWindowsHelp = true },
+                        )
+                        TerminalTopBarAction(
+                            text = "Sessions",
+                            onClick = { showSessions = !showSessions },
+                            emphasis = showSessions,
+                        )
                         if (connected || selectedSession?.status == TerminalStatus.Connecting) {
-                            TextButton(onClick = onDisconnect) { Text("Disconnect") }
+                            TerminalTopBarAction(
+                                text = "Disconnect",
+                                onClick = onDisconnect,
+                                destructive = true,
+                            )
                         } else {
-                            TextButton(onClick = onConnect) { Text("Connect") }
+                            TerminalTopBarAction(
+                                text = "Connect",
+                                onClick = onConnect,
+                                emphasis = true,
+                            )
                         }
                     }
                 },
+                colors =
+                    TopAppBarDefaults.topAppBarColors(
+                        containerColor = colors.background,
+                        scrolledContainerColor = colors.background,
+                    ),
             )
         },
     ) { innerPadding ->
@@ -292,16 +339,17 @@ fun TerminalScreen(
                 panel = true,
             ) {
                 Column(
-                    modifier = Modifier.padding(18.dp),
+                    modifier =
+                        Modifier
+                            .padding(18.dp)
+                            .heightIn(max = 560.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     TerminalWindowsSetupGuide()
-                    TextButton(
+                    TerminalPrimaryButton(
+                        text = "Close",
                         onClick = { showWindowsHelp = false },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Close")
-                    }
+                    )
                 }
             }
         }
@@ -318,51 +366,64 @@ private fun TerminalSessionSidebar(
     onShowProfiles: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberSidebarColorPalette()
     Column(
         modifier =
             modifier
-                .width(92.dp)
+                .width(120.dp)
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                .padding(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+                .background(colors.background)
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        TerminalSectionTitle(text = "Sessions")
         sessions.forEach { session ->
             val profile = profiles.firstOrNull { it.id == session.profileId }
+            val selected = session.id == selectedSessionId
             Column(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .background(
-                            if (session.id == selectedSessionId) {
-                                MaterialTheme.colorScheme.secondaryContainer
+                        .remodexFlatControlChrome(TerminalFieldShape)
+                        .then(
+                            if (selected) {
+                                Modifier.border(1.5.dp, colors.accent, TerminalFieldShape)
                             } else {
-                                MaterialTheme.colorScheme.surfaceContainerLow
+                                Modifier
                             },
                         )
                         .clickable { onSelectSession(session.id) }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
                     text = profile?.displayLabel ?: "Terminal",
-                    style = MaterialTheme.typography.labelMedium,
+                    style =
+                        MaterialTheme.typography.labelMedium.copy(
+                            fontSize = 12.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        ),
+                    color = colors.primaryText,
                     maxLines = 2,
                 )
                 Text(
                     text = session.status.name,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                    color = if (selected) colors.accent else colors.mutedText,
                 )
-                TextButton(onClick = { onCloseSession(session.id) }) { Text("Close") }
+                TerminalTextAction(
+                    text = "Close",
+                    onClick = { onCloseSession(session.id) },
+                    destructive = true,
+                )
             }
         }
-        TextButton(
+        TerminalSecondaryButton(
+            text = "+",
             onClick = onShowProfiles,
             enabled = profiles.isNotEmpty(),
             modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("+")
-        }
+        )
     }
 }
 
@@ -376,32 +437,37 @@ private fun TerminalProfilesContent(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier =
+            modifier
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Button(onClick = onCreateProfile, modifier = Modifier.fillMaxWidth()) {
-            Text("Create profile")
-        }
+        TerminalPrimaryButton(
+            text = "Create profile",
+            onClick = onCreateProfile,
+        )
         if (profiles.isEmpty()) {
-            Text(
-                text = "No terminal profiles yet.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            TerminalEmptyState(text = "No terminal profiles yet.")
+        } else {
+            TerminalSectionTitle(text = "Saved profiles")
         }
         profiles.forEach { profile ->
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(profile.displayLabel, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = "${profile.username}@${profile.host}:${profile.port}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            TerminalProfileCard(
+                title = profile.displayLabel,
+                subtitle = "${profile.username}@${profile.host}:${profile.port}",
+            ) {
+                TerminalPrimaryButton(
+                    text = "Open",
+                    onClick = { onOpenProfile(profile.id) },
+                    fullWidth = false,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { onOpenProfile(profile.id) }) { Text("Open") }
-                    OutlinedButton(onClick = { onEditProfile(profile.id) }) { Text("Edit") }
-                    TextButton(onClick = { onDeleteProfile(profile.id) }) { Text("Delete") }
-                }
+                TerminalSecondaryButton(text = "Edit", onClick = { onEditProfile(profile.id) })
+                TerminalTextAction(
+                    text = "Delete",
+                    onClick = { onDeleteProfile(profile.id) },
+                    destructive = true,
+                )
             }
         }
     }
@@ -420,70 +486,62 @@ private fun TerminalProfileEditorContent(
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = rememberSidebarColorPalette()
     Column(
-        modifier = modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier =
+            modifier
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        OutlinedTextField(
+        TerminalFormTextField(
             value = editor.label,
             onValueChange = onLabelChange,
-            label = { Text("Profile name (optional)") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
+            label = "Profile name (optional)",
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TerminalFormTextField(
                 value = editor.host,
                 onValueChange = onHostChange,
-                label = { Text("Host") },
+                label = "Host",
                 modifier = Modifier.weight(1f),
-                singleLine = true,
             )
-            OutlinedTextField(
+            TerminalFormTextField(
                 value = editor.port,
                 onValueChange = onPortChange,
-                label = { Text("Port") },
+                label = "Port",
                 modifier = Modifier.weight(0.42f),
-                singleLine = true,
             )
         }
-        OutlinedTextField(
+        TerminalFormTextField(
             value = editor.username,
             onValueChange = onUsernameChange,
-            label = { Text("Username") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
+            label = "Username",
         )
-        OutlinedTextField(
+        TerminalFormTextField(
             value = editor.privateKey,
             onValueChange = onPrivateKeyChange,
-            label = { Text(if (editor.allowUnencryptedKey) "Private key" else "Encrypted private key") },
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .height(132.dp),
-            minLines = 4,
+            label = if (editor.allowUnencryptedKey) "Private key" else "Encrypted private key",
+            singleLine = false,
+            minLines = 5,
+            maxLines = 8,
+            fieldHeight = Modifier.heightIn(min = 132.dp),
         )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Checkbox(
-                checked = editor.allowUnencryptedKey,
-                onCheckedChange = onAllowUnencryptedKeyChange,
-            )
-            Text(
-                text = "Allow unencrypted key",
-                modifier = Modifier.padding(top = 12.dp),
-            )
-        }
-        Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) {
-            Text("Save profile")
-        }
+        TerminalFormCheckboxRow(
+            checked = editor.allowUnencryptedKey,
+            onCheckedChange = onAllowUnencryptedKeyChange,
+            label = "Allow unencrypted key",
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        TerminalPrimaryButton(
+            text = "Save profile",
+            onClick = onSave,
+        )
         errorMessage?.let { message ->
             Text(
                 text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                color = colors.red,
             )
         }
     }
@@ -506,85 +564,95 @@ private fun TerminalSessionContent(
     val context = LocalContext.current
     val selectedSession = state.selectedSession ?: return
     val connected = selectedSession.status == TerminalStatus.Connected
+    val colors = rememberSidebarColorPalette()
 
     Column(modifier = modifier) {
         if (!connected) {
             Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                OutlinedTextField(
-                    value = selectedSession.passphrase,
-                    onValueChange = onPassphraseChange,
-                    label = {
-                        Text(
-                            if (state.selectedProfile?.allowUnencryptedKey == true) {
-                                "Passphrase (optional)"
-                            } else {
-                                "Passphrase"
-                            },
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Checkbox(
-                        checked = state.selectedProfile?.allowUnencryptedKey == true,
-                        onCheckedChange = onAllowUnencryptedKeyChange,
-                    )
-                    Text(
-                        text = "Allow unencrypted key for this profile",
-                        modifier = Modifier.padding(top = 12.dp),
+                state.selectedProfile?.let { profile ->
+                    TerminalInfoCard(
+                        text = "${profile.displayLabel}\n${profile.username}@${profile.host}:${profile.port}",
                     )
                 }
+                TerminalFormTextField(
+                    value = selectedSession.passphrase,
+                    onValueChange = onPassphraseChange,
+                    label =
+                        if (state.selectedProfile?.allowUnencryptedKey == true) {
+                            "Passphrase (optional)"
+                        } else {
+                            "Passphrase"
+                        },
+                    visualTransformation = PasswordVisualTransformation(),
+                )
+                TerminalFormCheckboxRow(
+                    checked = state.selectedProfile?.allowUnencryptedKey == true,
+                    onCheckedChange = onAllowUnencryptedKeyChange,
+                    label = "Allow unencrypted key for this profile",
+                )
                 selectedSession.pendingHostTrust?.let { pending ->
-                    Text(
+                    TerminalInfoCard(
                         text =
                             if (pending.replacesExistingTrust) {
                                 "Changed host fingerprint: ${pending.fingerprint}"
                             } else {
                                 "Host fingerprint: ${pending.fingerprint}"
                             },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Button(onClick = onTrustHost, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (pending.replacesExistingTrust) "Trust new host and connect" else "Trust host and connect")
-                    }
+                    TerminalPrimaryButton(
+                        text =
+                            if (pending.replacesExistingTrust) {
+                                "Trust new host and connect"
+                            } else {
+                                "Trust host and connect"
+                            },
+                        onClick = onTrustHost,
+                    )
                 }
                 if (selectedSession.pendingHostTrust == null) {
-                    Button(
+                    TerminalPrimaryButton(
+                        text =
+                            if (selectedSession.status == TerminalStatus.Connecting) {
+                                "Connecting"
+                            } else {
+                                "Connect"
+                            },
                         onClick = onConnect,
-                    enabled = selectedSession.status != TerminalStatus.Connecting,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(if (selectedSession.status == TerminalStatus.Connecting) "Connecting" else "Connect")
-                    }
+                        enabled = selectedSession.status != TerminalStatus.Connecting,
+                    )
                 }
                 selectedSession.errorMessage?.let { message ->
                     Text(
                         text = message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                        color = colors.red,
                     )
                 }
             }
-            Spacer(Modifier.weight(1f))
             return@Column
         }
-        TermuxTerminalSurface(
-            output = output,
-            onInput = onSend,
-            onResize = onResize,
+        TerminalViewportFrame(
             modifier =
                 Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
-        )
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            TermuxTerminalSurface(
+                output = output,
+                onInput = onSend,
+                onResize = onResize,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         TerminalAccessoryBar(
             pendingModifier = pendingModifier,
             onModifier = { modifierValue ->
@@ -617,67 +685,82 @@ private fun TerminalAccessoryBar(
     onClear: () -> Unit,
     onPaste: () -> Unit,
 ) {
+    val colors = rememberSidebarColorPalette()
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
+                .background(colors.background)
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        TerminalKey("Esc") { onSendText("\u001B") }
-        TerminalKey(if (pendingModifier == TerminalModifier.Ctrl) "Ctrl*" else "Ctrl") {
-            onModifier(TerminalModifier.Ctrl)
-        }
-        TerminalKey(if (pendingModifier == TerminalModifier.Alt) "Alt*" else "Alt") {
-            onModifier(TerminalModifier.Alt)
-        }
-        TerminalKey("Tab") { onSendText("\t") }
-        TerminalKey("Enter") { onSendText("\r") }
+        TerminalAccessoryKey(label = "Esc", onClick = { onSendText("\u001B") })
+        TerminalAccessoryKey(
+            label = if (pendingModifier == TerminalModifier.Ctrl) "Ctrl*" else "Ctrl",
+            selected = pendingModifier == TerminalModifier.Ctrl,
+            onClick = { onModifier(TerminalModifier.Ctrl) },
+        )
+        TerminalAccessoryKey(
+            label = if (pendingModifier == TerminalModifier.Alt) "Alt*" else "Alt",
+            selected = pendingModifier == TerminalModifier.Alt,
+            onClick = { onModifier(TerminalModifier.Alt) },
+        )
+        TerminalAccessoryKey(label = "Tab", onClick = { onSendText("\t") })
+        TerminalAccessoryKey(label = "Enter", onClick = { onSendText("\r") })
         listOf("/", "|", "~", "-").forEach { value ->
-            TerminalKey(value) { onSendText(value) }
+            TerminalAccessoryKey(label = value, onClick = { onSendText(value) })
         }
-        TerminalIconKey(
+        TerminalAccessoryKey(
             label = "Up",
-            icon = { Icon(Icons.Outlined.KeyboardArrowUp, contentDescription = null) },
+            leadingIcon = {
+                Icon(
+                    Icons.Outlined.KeyboardArrowUp,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = colors.primaryText,
+                )
+            },
             onClick = { onDirection(TerminalDirection.Up) },
         )
-        TerminalIconKey(
+        TerminalAccessoryKey(
             label = "Down",
-            icon = { Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = null) },
+            leadingIcon = {
+                Icon(
+                    Icons.Outlined.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = colors.primaryText,
+                )
+            },
             onClick = { onDirection(TerminalDirection.Down) },
         )
-        TerminalIconKey(
+        TerminalAccessoryKey(
             label = "Left",
-            icon = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, contentDescription = null) },
+            leadingIcon = {
+                Icon(
+                    Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = colors.primaryText,
+                )
+            },
             onClick = { onDirection(TerminalDirection.Left) },
         )
-        TerminalIconKey(
+        TerminalAccessoryKey(
             label = "Right",
-            icon = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null) },
+            leadingIcon = {
+                Icon(
+                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = colors.primaryText,
+                )
+            },
             onClick = { onDirection(TerminalDirection.Right) },
         )
-        TerminalKey("Clear", onClick = onClear)
-        TerminalKey("Paste", onClick = onPaste)
-    }
-}
-
-@Composable
-private fun TerminalKey(
-    label: String,
-    onClick: () -> Unit,
-) {
-    TextButton(onClick = onClick) { Text(label) }
-}
-
-@Composable
-private fun TerminalIconKey(
-    label: String,
-    icon: @Composable () -> Unit,
-    onClick: () -> Unit,
-) {
-    TextButton(onClick = onClick) {
-        icon()
-        Text(label)
+        TerminalAccessoryKey(label = "Clear", onClick = onClear)
+        TerminalAccessoryKey(label = "Paste", onClick = onPaste)
     }
 }

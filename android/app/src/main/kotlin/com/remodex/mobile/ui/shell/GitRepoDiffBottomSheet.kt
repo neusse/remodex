@@ -6,6 +6,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -30,12 +31,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -45,28 +48,36 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.res.painterResource
+import android.content.ClipData
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.composables.icons.lucide.R as LucideR
 import com.remodex.mobile.R
 import com.remodex.mobile.core.model.AIUnifiedPatchParser
 import com.remodex.mobile.core.model.GitRepoSyncResult
 import com.remodex.mobile.data.RepoDiffLastTurnFileRow
 import com.remodex.mobile.ui.agent.truncatePathMiddle
-import com.remodex.mobile.ui.theme.RemodexGitAddition
+import com.remodex.mobile.ui.sidebar.RemodexCircleIconButton
+import com.remodex.mobile.ui.sidebar.SidebarColorPalette
+import com.remodex.mobile.ui.sidebar.rememberSidebarColorPalette
 import com.remodex.mobile.ui.theme.RemodexModalBottomSheet
+import kotlinx.coroutines.launch
 import com.remodex.mobile.ui.turn.RepoMarkdownFileLink
 import kotlinx.coroutines.delay
 
@@ -116,6 +127,9 @@ fun GitRepoDiffBottomSheet(
         var selectedTabIx by remember { mutableIntStateOf(GitRepoDiffUiTab.Review.ordinal) }
         val selectedTab =
             GitRepoDiffUiTab.entries.getOrElse(selectedTabIx) { GitRepoDiffUiTab.Review }
+        var pathCopyDialogPath by remember { mutableStateOf<String?>(null) }
+        val clipboard = LocalClipboard.current
+        val copyScope = rememberCoroutineScope()
 
         val trimmedFull = remember(fullTreePatch) { fullTreePatch.trim() }
         val rows =
@@ -203,39 +217,57 @@ fun GitRepoDiffBottomSheet(
             edits.clear()
         }
 
+        val colors = rememberSidebarColorPalette()
+
         Column(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .fillMaxHeight(0.92f)
-                    .padding(horizontal = 18.dp)
-                    .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
                     text = stringResource(R.string.git_repo_diff_sheet_title),
-                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
+                    style =
+                        MaterialTheme.typography.titleLarge.copy(
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                    color = colors.primaryText,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(android.R.string.ok))
+                RemodexCircleIconButton(
+                    onClick = onDismiss,
+                    contentDescription = stringResource(android.R.string.ok),
+                    colors = colors,
+                ) {
+                    Icon(
+                        painter = painterResource(LucideR.drawable.lucide_ic_x),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = colors.primaryText,
+                    )
                 }
             }
 
-            GitRepoDiffSegmentedTabs(
+            GitRepoDiffTabRow(
                 selectedTab = selectedTab,
                 onSelected = { selectedTabIx = it.ordinal },
+                colors = colors,
             )
 
             Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                GitRepoDiffScopePill(
+                GitRepoDiffScopeChip(
                     selected = scope == GitRepoDiffScope.LastTurn,
                     onClick = {
                         edits.clear()
@@ -243,8 +275,9 @@ fun GitRepoDiffBottomSheet(
                     },
                     iconRes = LucideR.drawable.lucide_ic_clock,
                     label = stringResource(R.string.git_repo_diff_scope_last_turn),
+                    colors = colors,
                 )
-                GitRepoDiffScopePill(
+                GitRepoDiffScopeChip(
                     selected = scope == GitRepoDiffScope.FullWorkingTree,
                     onClick = {
                         edits.clear()
@@ -252,6 +285,7 @@ fun GitRepoDiffBottomSheet(
                     },
                     iconRes = LucideR.drawable.lucide_ic_git_branch,
                     label = stringResource(R.string.git_repo_diff_scope_full_tree),
+                    colors = colors,
                 )
             }
 
@@ -260,6 +294,7 @@ fun GitRepoDiffBottomSheet(
                     GitRepoDiffMessage(
                         text = fullTreeError,
                         isError = true,
+                        colors = colors,
                         modifier = Modifier.weight(1f),
                     )
 
@@ -268,18 +303,24 @@ fun GitRepoDiffBottomSheet(
                         modifier = Modifier.fillMaxWidth().weight(1f),
                         contentAlignment = Alignment.Center,
                     ) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = 2.dp,
+                            color = colors.accent,
+                        )
                     }
 
                 rows.isEmpty() && scope == GitRepoDiffScope.LastTurn ->
                     GitRepoDiffMessage(
                         text = stringResource(R.string.git_repo_diff_empty_last_turn),
+                        colors = colors,
                         modifier = Modifier.weight(1f),
                     )
 
                 rows.isEmpty() ->
                     GitRepoDiffMessage(
                         text = stringResource(R.string.git_repo_diff_empty),
+                        colors = colors,
                         modifier = Modifier.weight(1f),
                     )
 
@@ -291,6 +332,8 @@ fun GitRepoDiffBottomSheet(
                         edits = edits,
                         reviewLazyListState = reviewLazyListState,
                         markdownExpandRowStableKey = markdownExpandRowStableKey,
+                        onFilePathClick = { pathCopyDialogPath = it },
+                        colors = colors,
                         modifier =
                             Modifier
                                 .fillMaxWidth()
@@ -298,128 +341,122 @@ fun GitRepoDiffBottomSheet(
                     )
             }
         }
-    }
-}
 
-@Composable
-private fun GitRepoDiffSegmentedTabs(
-    selectedTab: GitRepoDiffUiTab,
-    onSelected: (GitRepoDiffUiTab) -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .border(0.5.dp, colors.outlineVariant.copy(alpha = 0.42f), RoundedCornerShape(14.dp))
-                .background(colors.surfaceVariant.copy(alpha = 0.28f))
-                .padding(2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        GitRepoDiffUiTab.entries.forEach { tab ->
-            val selected = tab == selectedTab
-            Box(
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(
-                            if (selected) {
-                                colors.primaryContainer.copy(alpha = 0.42f)
-                            } else {
-                                colors.surface.copy(alpha = 0.02f)
-                            },
+        pathCopyDialogPath?.let { fullPath ->
+            GitRepoDiffPathCopyDialog(
+                fullPath = fullPath,
+                onDismiss = { pathCopyDialogPath = null },
+                onCopy = {
+                    copyScope.launch {
+                        clipboard.setClipEntry(
+                            ClipData.newPlainText("repo-diff-file-path", fullPath).toClipEntry(),
                         )
-                        .clickable { onSelected(tab) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = stringResource(tab.stringRes),
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color =
-                            if (selected) {
-                                colors.onSurface
-                            } else {
-                                colors.onSurfaceVariant
-                            },
-                    )
-                    Spacer(Modifier.height(5.dp))
-                    Box(
-                        modifier =
-                            Modifier
-                                .width(72.dp)
-                                .height(3.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(
-                                    if (selected) {
-                                        colors.primary
-                                    } else {
-                                        colors.primary.copy(alpha = 0f)
-                                    },
-                                ),
-                    )
-                }
-            }
+                        pathCopyDialogPath = null
+                    }
+                },
+            )
         }
     }
 }
 
 @Composable
-private fun GitRepoDiffScopePill(
+private fun GitRepoDiffTabRow(
+    selectedTab: GitRepoDiffUiTab,
+    onSelected: (GitRepoDiffUiTab) -> Unit,
+    colors: SidebarColorPalette,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        GitRepoDiffUiTab.entries.forEach { tab ->
+            GitRepoDiffTabChip(
+                label = stringResource(tab.stringRes),
+                selected = tab == selectedTab,
+                colors = colors,
+                onClick = { onSelected(tab) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun GitRepoDiffTabChip(
+    label: String,
+    selected: Boolean,
+    colors: SidebarColorPalette,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(999.dp)
+    Box(
+        modifier =
+            modifier
+                .height(32.dp)
+                .clip(shape)
+                .background(if (selected) colors.accent else colors.surface)
+                .border(1.dp, if (selected) colors.accent else colors.border, shape)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style =
+                MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                ),
+            color = if (selected) colors.onAccent else colors.primaryText,
+        )
+    }
+}
+
+@Composable
+private fun GitRepoDiffScopeChip(
     selected: Boolean,
     onClick: () -> Unit,
     iconRes: Int,
     label: String,
+    colors: SidebarColorPalette,
     modifier: Modifier = Modifier,
 ) {
-    val colors = MaterialTheme.colorScheme
-    Surface(
-        modifier = modifier.height(48.dp),
-        shape = RoundedCornerShape(18.dp),
-        color =
-            if (selected) {
-                colors.primaryContainer
-            } else {
-                colors.surface
-            },
-        contentColor =
-            if (selected) {
-                colors.onPrimaryContainer
-            } else {
-                colors.onSurfaceVariant
-            },
-        border =
-            androidx.compose.foundation.BorderStroke(
-                0.5.dp,
-                if (selected) colors.primary.copy(alpha = 0.24f) else colors.outlineVariant.copy(alpha = 0.36f),
-            ),
-        onClick = onClick,
+    val shape = RoundedCornerShape(999.dp)
+    Row(
+        modifier =
+            modifier
+                .height(32.dp)
+                .clip(shape)
+                .background(if (selected) colors.selectedRow else colors.surface)
+                .border(1.dp, if (selected) colors.accent.copy(alpha = 0.55f) else colors.border, shape)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                maxLines = 1,
-            )
-        }
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = if (selected) colors.accent else colors.secondaryText,
+        )
+        Text(
+            text = label,
+            style =
+                MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    fontSize = 12.sp,
+                ),
+            color = if (selected) colors.primaryText else colors.secondaryText,
+            maxLines = 1,
+        )
     }
 }
 
 @Composable
 private fun GitRepoDiffMessage(
     text: String,
+    colors: SidebarColorPalette,
     modifier: Modifier = Modifier,
     isError: Boolean = false,
 ) {
@@ -429,12 +466,12 @@ private fun GitRepoDiffMessage(
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
             color =
                 if (isError) {
-                    MaterialTheme.colorScheme.error
+                    colors.red
                 } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                    colors.secondaryText
                 },
         )
     }
@@ -448,6 +485,8 @@ private fun GitRepoDiffContent(
     edits: SnapshotStateMap<String, TextFieldValue>,
     reviewLazyListState: LazyListState,
     markdownExpandRowStableKey: String?,
+    onFilePathClick: (String) -> Unit,
+    colors: SidebarColorPalette,
     modifier: Modifier = Modifier,
 ) {
     when (uiTab) {
@@ -455,13 +494,15 @@ private fun GitRepoDiffContent(
             LazyColumn(
                 modifier = modifier,
                 contentPadding = PaddingValues(vertical = 2.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(rows, key = { it.stableKey }) { row ->
                     GitRepoDiffSummaryRow(
                         path = row.displayPath,
                         chunk = row.chunk,
                         gitStatus = gitStatus,
+                        onFilePathClick = onFilePathClick,
+                        colors = colors,
                     )
                 }
             }
@@ -470,7 +511,7 @@ private fun GitRepoDiffContent(
                 modifier = modifier,
                 state = reviewLazyListState,
                 contentPadding = PaddingValues(vertical = 2.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(rows, key = { it.stableKey }) { row ->
                     GitRepoDiffExpandableFile(
@@ -479,6 +520,8 @@ private fun GitRepoDiffContent(
                         chunk = row.chunk,
                         gitStatus = gitStatus,
                         edits = edits,
+                        onFilePathClick = onFilePathClick,
+                        colors = colors,
                         expandForMarkdownFocus =
                             markdownExpandRowStableKey != null &&
                                 row.stableKey == markdownExpandRowStableKey,
@@ -493,96 +536,162 @@ private fun GitRepoDiffSummaryRow(
     path: String,
     chunk: String,
     gitStatus: GitRepoSyncResult?,
+    onFilePathClick: (String) -> Unit,
+    colors: SidebarColorPalette,
 ) {
     val (adds, dels) =
         remember(chunk) { AIUnifiedPatchParser.additionsDeletionsForDisplay(chunk) }
     val gitFile = remember(path, gitStatus) { findGitStatusForPatchPath(path, gitStatus?.files.orEmpty()) }
     val staging = gitFile?.let { GitPathStagingUi.fromPorcelain(it.status) }
+    val cardShape = RoundedCornerShape(12.dp)
 
-    Surface(
+    Row(
         modifier =
             Modifier
-                .fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-        border =
-            androidx.compose.foundation.BorderStroke(
-                0.5.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-            ),
+                .fillMaxWidth()
+                .clip(cardShape)
+                .background(colors.surface)
+                .border(1.dp, colors.border, cardShape)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            GitRepoDiffFileTile()
-            Text(
-                text = truncatePathMiddle(path, maxLen = 42),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            staging?.let { GitRepoDiffStagingBadge(staging = it) }
-            GitRepoDiffStatBadge(text = "+$adds", positive = true)
-            GitRepoDiffStatBadge(text = "-$dels", positive = false)
-        }
+        GitRepoDiffFileTile(colors = colors)
+        GitRepoDiffFilePathBlock(
+            path = path,
+            onPathClick = onFilePathClick,
+            colors = colors,
+            modifier = Modifier.weight(1f),
+        )
+        staging?.let { GitRepoDiffStagingBadge(staging = it, colors = colors) }
+        GitRepoDiffStatText(text = "+$adds", positive = true, colors = colors)
+        GitRepoDiffStatText(text = "-$dels", positive = false, colors = colors)
     }
 }
 
 @Composable
-private fun GitRepoDiffFileTile() {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+private fun GitRepoDiffFileTile(colors: SidebarColorPalette) {
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        modifier =
+            Modifier
+                .size(36.dp)
+                .clip(shape)
+                .background(colors.background)
+                .border(1.dp, colors.border, shape),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier.size(44.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(LucideR.drawable.lucide_ic_file_diff),
-                contentDescription = null,
-                modifier = Modifier.size(22.dp),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
-    }
-}
-
-@Composable
-private fun GitRepoDiffStatBadge(
-    text: String,
-    positive: Boolean,
-) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color =
-            if (positive) {
-                RemodexGitAddition.copy(alpha = 0.16f)
-            } else {
-                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.62f)
-            },
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-            color =
-                if (positive) {
-                    RemodexGitAddition
-                } else {
-                    MaterialTheme.colorScheme.onErrorContainer
-                },
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            maxLines = 1,
+        Icon(
+            painter = painterResource(LucideR.drawable.lucide_ic_file_diff),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = colors.secondaryText,
         )
     }
 }
 
 @Composable
-private fun GitRepoDiffStagingBadge(staging: GitPathStagingUi) {
+private fun GitRepoDiffStatText(
+    text: String,
+    positive: Boolean,
+    colors: SidebarColorPalette,
+) {
+    Text(
+        text = text,
+        style =
+            MaterialTheme.typography.labelLarge.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+            ),
+        color = if (positive) colors.green else colors.red,
+        maxLines = 1,
+    )
+}
+
+@Composable
+private fun GitRepoDiffFilePathBlock(
+    path: String,
+    onPathClick: (String) -> Unit,
+    colors: SidebarColorPalette,
+    modifier: Modifier = Modifier,
+) {
+    val fileName = remember(path) { fileNameFromRepoPath(path) }
+    Column(
+        modifier =
+            modifier.clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { onPathClick(path) },
+            ),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = fileName,
+            style =
+                MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                ),
+            color = colors.primaryText,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = truncatePathMiddle(path),
+            style =
+                MaterialTheme.typography.labelSmall.copy(
+                    lineHeight = 13.sp,
+                    fontSize = 11.sp,
+                ),
+            fontFamily = FontFamily.Monospace,
+            color = colors.mutedText,
+            maxLines = 1,
+            overflow = TextOverflow.MiddleEllipsis,
+        )
+    }
+}
+
+@Composable
+private fun GitRepoDiffPathCopyDialog(
+    fullPath: String,
+    onDismiss: () -> Unit,
+    onCopy: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.turn_thread_path_dialog_title)) },
+        text = {
+            SelectionContainer {
+                Text(
+                    text = fullPath,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onCopy) {
+                Text(stringResource(R.string.turn_thread_path_copy))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        },
+    )
+}
+
+private fun fileNameFromRepoPath(path: String): String =
+    path
+        .replace('\\', '/')
+        .substringAfterLast('/')
+        .ifBlank { path }
+
+@Composable
+private fun GitRepoDiffStagingBadge(
+    staging: GitPathStagingUi,
+    colors: SidebarColorPalette,
+) {
     val label =
         when {
             staging.isUntracked -> stringResource(R.string.git_repo_diff_staging_untracked)
@@ -591,18 +700,23 @@ private fun GitRepoDiffStagingBadge(staging: GitPathStagingUi) {
             !staging.staged && staging.unstaged -> stringResource(R.string.git_repo_diff_staging_unstaged_only)
             else -> null
         } ?: return
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f),
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-            maxLines = 1,
-        )
-    }
+    val shape = RoundedCornerShape(999.dp)
+    Text(
+        text = label,
+        style =
+            MaterialTheme.typography.labelSmall.copy(
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+            ),
+        color = colors.secondaryText,
+        modifier =
+            Modifier
+                .clip(shape)
+                .background(colors.background)
+                .border(1.dp, colors.border, shape)
+                .padding(horizontal = 7.dp, vertical = 3.dp),
+        maxLines = 1,
+    )
 }
 
 @Composable
@@ -612,6 +726,8 @@ private fun GitRepoDiffExpandableFile(
     chunk: String,
     gitStatus: GitRepoSyncResult?,
     edits: SnapshotStateMap<String, TextFieldValue>,
+    onFilePathClick: (String) -> Unit,
+    colors: SidebarColorPalette,
     expandForMarkdownFocus: Boolean = false,
 ) {
     var expanded by remember(rowKey) { mutableStateOf(false) }
@@ -627,140 +743,126 @@ private fun GitRepoDiffExpandableFile(
         }
     val gitFile = remember(path, gitStatus) { findGitStatusForPatchPath(path, gitStatus?.files.orEmpty()) }
     val staging = gitFile?.let { GitPathStagingUi.fromPorcelain(it.status) }
+    val cardShape = RoundedCornerShape(12.dp)
+    val patchPanelShape = RoundedCornerShape(10.dp)
 
-    Surface(
+    Column(
         modifier =
             Modifier
-                .fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-        border =
-            androidx.compose.foundation.BorderStroke(
-                0.5.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-            ),
+                .fillMaxWidth()
+                .clip(cardShape)
+                .background(colors.surface)
+                .border(1.dp, colors.border, cardShape)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                GitRepoDiffFileTile()
-                Text(
-                    text = truncatePathMiddle(path, maxLen = 42),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                staging?.let { GitRepoDiffStagingBadge(staging = it) }
-                GitRepoDiffStatBadge(text = "+$adds", positive = true)
-                GitRepoDiffStatBadge(text = "-$dels", positive = false)
-                Icon(
-                    imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-            AnimatedVisibility(
-                visible = expanded,
-                enter = expandVertically(),
-                exit = shrinkVertically(),
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Spacer(Modifier.height(16.dp))
-                    when {
-                        chunkIsTimelinePlaceholderEcho(chunk) ->
-                            Text(
-                                text = stringResource(R.string.git_repo_diff_timeline_no_real_patch),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(8.dp),
-                            )
-                        chunkLooksLikeUnifiedDiff(chunk) ->
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    GitRepoDiffPatchModeButton(
-                                        selected = !diffPatchEditMode,
-                                        onClick = { diffPatchEditMode = false },
-                                        iconRes = LucideR.drawable.lucide_ic_eye,
-                                        label = stringResource(R.string.git_repo_diff_mode_preview),
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    GitRepoDiffPatchModeButton(
-                                        selected = diffPatchEditMode,
-                                        onClick = { diffPatchEditMode = true },
-                                        iconRes = LucideR.drawable.lucide_ic_square_pen,
-                                        label = stringResource(R.string.git_repo_diff_mode_edit),
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                }
-                                Spacer(Modifier.height(12.dp))
-                                val patchText = edits[rowKey]?.text ?: chunk
-                                if (!diffPatchEditMode) {
-                                    GitPatchHighlightedBlock(
-                                        patch = patchText,
-                                        verticalScrollEnabled = false,
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(14.dp))
-                                                .border(
-                                                    0.5.dp,
-                                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-                                                    RoundedCornerShape(14.dp),
-                                                )
-                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)),
-                                    )
-                                } else {
-                                    val fieldValue =
-                                        edits.getOrPut(rowKey) { TextFieldValue(chunk) }
-                                    DiffPatchTextEditor(
-                                        value = fieldValue,
-                                        onValueChange = { edits[rowKey] = it },
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .heightIn(max = 360.dp)
-                                                .clip(RoundedCornerShape(14.dp))
-                                                .border(
-                                                    0.5.dp,
-                                                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-                                                    RoundedCornerShape(14.dp),
-                                                )
-                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)),
-                                    )
-                                }
+            GitRepoDiffFileTile(colors = colors)
+            GitRepoDiffFilePathBlock(
+                path = path,
+                onPathClick = onFilePathClick,
+                colors = colors,
+                modifier = Modifier.weight(1f),
+            )
+            staging?.let { GitRepoDiffStagingBadge(staging = it, colors = colors) }
+            GitRepoDiffStatText(text = "+$adds", positive = true, colors = colors)
+            GitRepoDiffStatText(text = "-$dels", positive = false, colors = colors)
+            Icon(
+                imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = null,
+                tint = colors.mutedText,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(),
+            exit = shrinkVertically(),
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Spacer(Modifier.height(12.dp))
+                when {
+                    chunkIsTimelinePlaceholderEcho(chunk) ->
+                        Text(
+                            text = stringResource(R.string.git_repo_diff_timeline_no_real_patch),
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                            color = colors.secondaryText,
+                            modifier = Modifier.padding(4.dp),
+                        )
+                    chunkLooksLikeUnifiedDiff(chunk) ->
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                GitRepoDiffPatchModeButton(
+                                    selected = !diffPatchEditMode,
+                                    onClick = { diffPatchEditMode = false },
+                                    iconRes = LucideR.drawable.lucide_ic_eye,
+                                    label = stringResource(R.string.git_repo_diff_mode_preview),
+                                    colors = colors,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                GitRepoDiffPatchModeButton(
+                                    selected = diffPatchEditMode,
+                                    onClick = { diffPatchEditMode = true },
+                                    iconRes = LucideR.drawable.lucide_ic_square_pen,
+                                    label = stringResource(R.string.git_repo_diff_mode_edit),
+                                    colors = colors,
+                                    modifier = Modifier.weight(1f),
+                                )
                             }
-                        else -> {
-                            val initial = remember(rowKey, chunk) { TextFieldValue(chunk) }
-                            val fieldValue = edits[rowKey] ?: initial
-                            DiffPatchTextEditor(
-                                value = fieldValue,
-                                onValueChange = { edits[rowKey] = it },
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 360.dp)
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .border(
-                                            0.5.dp,
-                                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-                                            RoundedCornerShape(14.dp),
-                                        )
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)),
-                            )
+                            Spacer(Modifier.height(10.dp))
+                            val patchText = edits[rowKey]?.text ?: chunk
+                            if (!diffPatchEditMode) {
+                                GitPatchHighlightedBlock(
+                                    patch = patchText,
+                                    verticalScrollEnabled = false,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clip(patchPanelShape)
+                                            .border(1.dp, colors.border, patchPanelShape)
+                                            .background(colors.background),
+                                )
+                            } else {
+                                val fieldValue =
+                                    edits.getOrPut(rowKey) { TextFieldValue(chunk) }
+                                DiffPatchTextEditor(
+                                    value = fieldValue,
+                                    onValueChange = { edits[rowKey] = it },
+                                    colors = colors,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 360.dp)
+                                            .clip(patchPanelShape)
+                                            .border(1.dp, colors.border, patchPanelShape)
+                                            .background(colors.background),
+                                )
+                            }
                         }
+                    else -> {
+                        val initial = remember(rowKey, chunk) { TextFieldValue(chunk) }
+                        val fieldValue = edits[rowKey] ?: initial
+                        DiffPatchTextEditor(
+                            value = fieldValue,
+                            onValueChange = { edits[rowKey] = it },
+                            colors = colors,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 360.dp)
+                                    .clip(patchPanelShape)
+                                    .border(1.dp, colors.border, patchPanelShape)
+                                    .background(colors.background),
+                        )
                     }
                 }
             }
@@ -774,49 +876,40 @@ private fun GitRepoDiffPatchModeButton(
     onClick: () -> Unit,
     iconRes: Int,
     label: String,
+    colors: SidebarColorPalette,
     modifier: Modifier = Modifier,
 ) {
-    val colors = MaterialTheme.colorScheme
-    Surface(
-        modifier = modifier.height(52.dp),
-        shape = RoundedCornerShape(14.dp),
-        color =
-            if (selected) {
-                colors.primaryContainer
-            } else {
-                colors.surface.copy(alpha = 0.18f)
-            },
-        contentColor =
-            if (selected) {
-                colors.onPrimaryContainer
-            } else {
-                colors.onSurface
-            },
-        border =
-            androidx.compose.foundation.BorderStroke(
-                0.5.dp,
-                if (selected) colors.primary.copy(alpha = 0.24f) else colors.outlineVariant.copy(alpha = 0.36f),
-            ),
-        onClick = onClick,
+    val shape = RoundedCornerShape(999.dp)
+    Row(
+        modifier =
+            modifier
+                .height(32.dp)
+                .clip(shape)
+                .background(if (selected) colors.accent else colors.surface)
+                .border(1.dp, if (selected) colors.accent else colors.border, shape)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 10.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(9.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = if (selected) colors.onAccent else colors.secondaryText,
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = label,
+            style =
+                MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                ),
+            color = if (selected) colors.onAccent else colors.primaryText,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -824,6 +917,7 @@ private fun GitRepoDiffPatchModeButton(
 private fun DiffPatchTextEditor(
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
+    colors: SidebarColorPalette,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
@@ -833,7 +927,7 @@ private fun DiffPatchTextEditor(
         textStyle =
             TextStyle(
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = colors.primaryText,
                 fontSize = MaterialTheme.typography.bodySmall.fontSize,
             ),
         modifier =

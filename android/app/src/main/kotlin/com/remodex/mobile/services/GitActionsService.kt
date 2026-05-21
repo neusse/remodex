@@ -12,6 +12,7 @@ import com.remodex.mobile.core.model.GitInitResult
 import com.remodex.mobile.core.model.GitManagedHandoffTransferResult
 import com.remodex.mobile.core.model.GitPullResult
 import com.remodex.mobile.core.model.GitPushResult
+import com.remodex.mobile.core.model.GitRunStackedActionResult
 import com.remodex.mobile.core.model.GitRemoteUrlResult
 import com.remodex.mobile.core.model.GitRepoDiffResult
 import com.remodex.mobile.core.model.GitRepoSyncResult
@@ -134,6 +135,33 @@ class GitActionsService(
             }
         val json = request("git/push", extra)
         return GitPushResult.fromJson(json)
+    }
+
+    /**
+     * Runs commit/push/PR flows on the Mac via [git/runStackedAction] (parity iOS stacked git toast).
+     * Emits [git/stackedAction/progress] when [progressId] is set.
+     */
+    suspend fun runStackedAction(
+        action: String,
+        commitMessage: String? = null,
+        baseBranch: String? = null,
+        progressId: String? = null,
+    ): GitRunStackedActionResult {
+        val extra =
+            buildMap {
+                put("action", JSONValue.Str(action))
+                commitMessage?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                    put("commitMessage", JSONValue.Str(it))
+                }
+                baseBranch?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                    put("baseBranch", JSONValue.Str(it))
+                }
+                progressId?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                    put("progressId", JSONValue.Str(it))
+                }
+            }
+        val json = request("git/runStackedAction", extra)
+        return GitRunStackedActionResult.fromJson(json)
     }
 
     /** Parity with iOS `git/resetToRemote` + confirm discard runtime changes. */
@@ -277,6 +305,15 @@ class GitActionsService(
                     handoffFallback(f, "The current handoff source is not available on this Mac.")
                 "missing_handoff_target" ->
                     handoffFallback(f, "The destination for this handoff is not available on this Mac.")
+                "github_cli_unavailable" ->
+                    "GitHub CLI (`gh`) is not installed on this Mac. Install it or open the PR draft in the browser."
+                "github_cli_unauthenticated" ->
+                    "GitHub CLI is not signed in on this Mac. Run `gh auth login` and try again."
+                "github_cli_failed" -> f
+                "pull_request_same_branch" -> f
+                "no_default_branch" -> f
+                "no_branch" -> f
+                "dirty_worktree" -> f
                 null -> f
                 else -> f
             }

@@ -51,6 +51,7 @@ internal fun TurnRichMarkdownBody(
     contentColor: Color,
     modifier: Modifier = Modifier,
     keyPrefix: String = TurnTimelineCacheKey.textKey("rich-markdown", markdown),
+    linkColor: Color = contentColor,
 ) {
     val segments = TurnTimelineRichContentCache.parseMermaidMarkdown(markdown)
     if (segments == null) {
@@ -59,6 +60,7 @@ internal fun TurnRichMarkdownBody(
             contentColor = contentColor,
             modifier = modifier,
             keyPrefix = keyPrefix,
+            linkColor = linkColor,
         )
         return
     }
@@ -76,6 +78,7 @@ internal fun TurnRichMarkdownBody(
                             contentColor = contentColor,
                             modifier = Modifier.fillMaxWidth(),
                             keyPrefix = "$keyPrefix-md-$index",
+                            linkColor = linkColor,
                         )
                     }
                 }

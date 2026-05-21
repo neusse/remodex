@@ -52,6 +52,7 @@ fun TermuxTerminalSurface(
     val focusRequester = remember { FocusRequester() }
     val terminalBridge = remember { TermuxTerminalBridge(onInput = onInput) }
     val density = LocalDensity.current
+    val viewportBackground = rememberTerminalViewportBackground()
     val terminalTextSizePx = with(density) { TERMINAL_TEXT_SIZE_DP.dp.toPx().toInt() }
     val inputValue = remember { mutableStateOf("") }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -77,7 +78,7 @@ fun TermuxTerminalSurface(
     Box(
         modifier =
             modifier
-                .background(Color(0xFF050505))
+                .background(viewportBackground)
                 .clickable { focusRequester.requestFocus() }
                 .onSizeChanged { size ->
                     val horizontalPaddingPx = with(density) { TERMINAL_CONTENT_PADDING.toPx() * 2 }

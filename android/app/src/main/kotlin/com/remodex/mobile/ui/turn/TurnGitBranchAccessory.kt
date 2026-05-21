@@ -3,6 +3,7 @@ package com.remodex.mobile.ui.turn
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,7 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +37,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -49,8 +50,8 @@ import com.remodex.mobile.data.GitBranchDisplaySummary
 import com.remodex.mobile.data.GitBranchPickerRules
 import com.remodex.mobile.ui.theme.AgentLightColors
 import com.remodex.mobile.ui.theme.RemodexModalBottomSheet
-import com.remodex.mobile.ui.theme.RemodexPopupChrome
 import com.remodex.mobile.ui.theme.isAgentLightChrome
+import com.remodex.mobile.ui.sidebar.remodexFlatControlChrome
 
 /** Read-only Git branch / worktree snapshot for the active thread (J.7c), with optional picker. */
 sealed class GitBranchPaneState {
@@ -605,14 +606,7 @@ private fun LoadedGitBranchPill(
     val chrome = isAgentLightChrome()
     val pillShape = RoundedCornerShape(50)
 
-    val pillFill =
-        if (chrome) {
-            AgentLightColors.Surface.copy(alpha = 0.93f)
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-        }
-
-    val outlineMod: Modifier = Modifier.border(RemodexPopupChrome.borderStroke(), pillShape)
+    val outlineMod: Modifier = Modifier.remodexFlatControlChrome(pillShape)
 
     val glyphTint =
         if (chrome) {
@@ -636,28 +630,23 @@ private fun LoadedGitBranchPill(
         }
 
     BoxWithConstraints(modifier = modifier) {
-        Surface(
-            shape = pillShape,
-            color = pillFill,
+        Box(
             modifier =
-                outlineMod
-                    .then(clickableMod)
-                    .height(30.dp)
+                Modifier
+                    .align(Alignment.CenterEnd)
                     .widthIn(max = maxWidth)
-                    .align(Alignment.CenterEnd),
+                    .then(outlineMod)
+                    .then(clickableMod),
         ) {
             Row(
-                modifier =
-                    Modifier
-                        .widthIn(max = maxWidth)
-                        .padding(horizontal = 9.dp, vertical = 5.dp),
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
                 Icon(
                     painter = painterResource(LucideR.drawable.lucide_ic_git_fork),
                     contentDescription = null,
-                    modifier = Modifier.size(12.dp),
+                    modifier = Modifier.size(ComposerFootnoteIconDp),
                     tint = glyphTint,
                 )
 
@@ -673,14 +662,14 @@ private fun LoadedGitBranchPill(
 
                 if (isSwitchingBranch) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(10.dp),
+                        modifier = Modifier.size(ComposerFootnoteIconDp),
                         strokeWidth = 2.dp,
                     )
                 } else {
                     Icon(
-                        imageVector = Icons.Filled.ArrowDropDown,
+                        painter = painterResource(LucideR.drawable.lucide_ic_chevron_down),
                         contentDescription = null,
-                        modifier = Modifier.size(13.dp),
+                        modifier = Modifier.size(ComposerFootnoteIconDp),
                         tint = glyphTint,
                     )
                 }

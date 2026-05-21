@@ -229,6 +229,7 @@ internal fun CodexMessage.shouldDisplayPlanBarAccessory(): Boolean {
     if (role != CodexMessageRole.system || kind != CodexMessageKind.plan) return false
     if (isStreaming) return true
     val state = planState ?: return text.trim().isNotEmpty()
+    if (PlanAccessorySnapshot.fromMessage(this).status == PlanAccessoryStatus.Completed) return false
     return state.explanation?.trim()?.isNotEmpty() == true || state.steps.isNotEmpty()
 }
 
@@ -254,4 +255,53 @@ internal fun planMarkdownFromMessage(message: CodexMessage): String {
         parts += body
     }
     return parts.joinToString("\n\n").trim().ifEmpty { "Plan generated." }
+}
+
+internal data class ProposedPlanBlock(
+    val markdown: String,
+    val startIndex: Int,
+    val endIndex: Int,
+)
+
+internal data class ProposedPlanExtraction(
+    val visibleMarkdown: String,
+    val plans: List<ProposedPlanBlock>,
+)
+
+internal object ProposedPlanBlockParser {
+    private val planRegex =
+        Regex("""(?is)<\s*proposed_plan\s*>\s*(.*?)\s*<\s*/\s*proposed_plan\s*>""")
+
+    fun extract(markdown: String): ProposedPlanExtraction {
+        val matches = planRegex.findAll(markdown).toList()
+        if (matches.isEmpty()) {
+            return ProposedPlanExtraction(visibleMarkdown = markdown, plans = emptyList())
+        }
+
+        val visible = StringBuilder()
+        val plans = mutableListOf<ProposedPlanBlock>()
+        var cursor = 0
+        matches.forEach { match ->
+            if (match.range.first > cursor) {
+                visible.append(markdown.substring(cursor, match.range.first))
+            }
+            match.groups[1]?.value?.trim()?.takeIf { it.isNotEmpty() }?.let { body ->
+                plans +=
+                    ProposedPlanBlock(
+                        markdown = body,
+                        startIndex = match.range.first,
+                        endIndex = match.range.last + 1,
+                    )
+            }
+            cursor = match.range.last + 1
+        }
+        if (cursor < markdown.length) {
+            visible.append(markdown.substring(cursor))
+        }
+
+        return ProposedPlanExtraction(
+            visibleMarkdown = visible.toString().replace(Regex("""\n{3,}"""), "\n\n").trim(),
+            plans = plans,
+        )
+    }
 }

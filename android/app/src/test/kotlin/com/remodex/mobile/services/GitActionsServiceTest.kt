@@ -117,6 +117,48 @@ class GitActionsServiceTest {
         }
 
     @Test
+    fun runStackedAction_sendsActionProgressIdAndBaseBranch() =
+        runTest {
+            var captured: Pair<String, JSONValue?>? = null
+            val repo =
+                GitActionsFakeRepository { method, params ->
+                    captured = method to params
+                    RPCMessage.success(
+                        id = null,
+                        result =
+                            JSONValue.Obj(
+                                mapOf(
+                                    "action" to JSONValue.Str("commit_push_pr"),
+                                    "pr" to
+                                        JSONValue.Obj(
+                                            mapOf(
+                                                "status" to JSONValue.Str("created"),
+                                                "number" to JSONValue.NumLong(9),
+                                            ),
+                                        ),
+                                ),
+                            ),
+                    )
+                }
+            val result =
+                GitActionsService(repo, "/repo").runStackedAction(
+                    action = "commit_push_pr",
+                    commitMessage = "Fix flow",
+                    baseBranch = "main",
+                    progressId = "progress-1",
+                )
+            val m = (captured!!.second as JSONValue.Obj).map
+            assertEquals("git/runStackedAction", captured!!.first)
+            assertEquals("commit_push_pr", m["action"]?.stringValue)
+            assertEquals("Fix flow", m["commitMessage"]?.stringValue)
+            assertEquals("main", m["baseBranch"]?.stringValue)
+            assertEquals("progress-1", m["progressId"]?.stringValue)
+            assertEquals("/repo", m["cwd"]?.stringValue)
+            assertEquals("created", result.pullRequest?.status)
+            assertEquals(9, result.pullRequest?.number)
+        }
+
+    @Test
     fun removeManagedWorktree_omitsBranchWhenNullOrBlank() =
         runTest {
             var map: Map<String, JSONValue>? = null
