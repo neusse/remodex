@@ -87,7 +87,7 @@ struct TurnTimelineView<EmptyState: View, Composer: View>: View {
     private static var initialWarmTailCount: Int { 0 }
     private static var scrollToLatestButtonLift: CGFloat { 44 + 8 }
     private static var pendingAssistantIndicatorBottomLift: CGFloat { 4 }
-    private static var pendingAssistantIndicatorContentGap: CGFloat { 8 }
+    private static var pendingAssistantIndicatorContentGap: CGFloat { 16 }
     private static var scrollGeometryCoalescingDelayNanoseconds: UInt64 { 16_000_000 }
 
     @State private var visibleTailCount: Int = initialVisibleTailCount
