@@ -44,13 +44,13 @@ fun rememberSidebarColorPalette(
         val onAccent = userBubbleColor.accentForeground(colorScheme, isLightChrome)
         if (darkTheme) {
             SidebarColorPalette(
-                background = Color(0xFF000000),
-                surface = Color(0xFF1C1C1E),
-                selectedRow = Color(0xFF1C1C1E),
-                border = Color(0xFF2C2C2E),
-                primaryText = Color(0xFFFFFFFF),
-                secondaryText = Color(0xFFAEAEB2),
-                mutedText = Color(0xFF8E8E93),
+                background = colorScheme.background,
+                surface = colorScheme.surface,
+                selectedRow = colorScheme.surfaceVariant,
+                border = colorScheme.outline,
+                primaryText = colorScheme.onBackground,
+                secondaryText = colorScheme.onSurfaceVariant,
+                mutedText = colorScheme.outlineVariant,
                 accent = accent,
                 onAccent = onAccent,
                 green = Color(0xFF55D979),
@@ -58,13 +58,13 @@ fun rememberSidebarColorPalette(
             )
         } else {
             SidebarColorPalette(
-                background = Color(0xFFF6F5F2),
-                surface = Color(0xFFEEEDE9),
-                selectedRow = Color(0xFFEDEBE5),
-                border = Color(0xFFD8D5CD),
-                primaryText = Color(0xFF1E1F21),
-                secondaryText = Color(0xFF5F6266),
-                mutedText = Color(0xFF8A8D91),
+                background = colorScheme.background,
+                surface = colorScheme.surfaceVariant,
+                selectedRow = colorScheme.surfaceVariant,
+                border = colorScheme.outline,
+                primaryText = colorScheme.onBackground,
+                secondaryText = colorScheme.onSurfaceVariant,
+                mutedText = colorScheme.outlineVariant,
                 accent = accent,
                 onAccent = onAccent,
                 green = Color(0xFF18A957),

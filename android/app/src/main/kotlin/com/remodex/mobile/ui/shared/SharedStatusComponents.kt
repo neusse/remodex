@@ -25,7 +25,6 @@ import com.remodex.mobile.R
 import com.remodex.mobile.core.model.CodexRateLimitDisplayRow
 import com.remodex.mobile.core.model.ContextWindowUsage
 import com.remodex.mobile.core.transport.ConnectionState
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 data class TrustedPairSnapshot(
     val relayUrl: String?,
@@ -40,11 +39,6 @@ fun TrustedPairSummary(
     snapshot: TrustedPairSnapshot?,
     modifier: Modifier = Modifier,
 ) {
-    val relayHost =
-        snapshot?.relayUrl
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?.let { raw -> runCatching { raw.toHttpUrlOrNull()?.host ?: raw }.getOrDefault(raw) }
     val mac =
         snapshot?.macDeviceId
             ?.takeIf { !it.isNullOrBlank() }
@@ -72,13 +66,6 @@ fun TrustedPairSummary(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            relayHost?.let {
-                Text(
-                    text = stringResource(R.string.trusted_pair_summary_relay, it),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             mac?.let {
                 Text(
                     text = stringResource(R.string.trusted_pair_summary_device, it.takeLast(12)),

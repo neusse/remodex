@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.R as LucideR
 import com.remodex.mobile.R
+import com.remodex.mobile.core.config.FeatureFlags
 import com.remodex.mobile.core.model.CodexThread
 import com.remodex.mobile.core.model.GitWorktreeChangeTransferMode
 import com.remodex.mobile.core.model.TurnGitPreflightOperation
@@ -83,9 +85,11 @@ fun SidebarScreen(
     activeChatMetadata: SidebarActiveChatMetadata? = null,
     onOpenArchivedChats: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenTesterHq: () -> Unit = {},
     onOpenTerminal: () -> Unit = {},
     onOpenPairingScanner: () -> Unit = {},
     onThreadSelected: suspend () -> Unit = {},
+    onTesterHqButtonPositioned: (LayoutCoordinates) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val threads by repository.threads.collectAsStateWithLifecycle()
@@ -277,6 +281,9 @@ fun SidebarScreen(
                 ),
             onOpenDesktop = onOpenPairingScanner,
             onOpenSettings = onOpenSettings,
+            showTesterHq = FeatureFlags.betaEngagementEnabled,
+            onOpenTesterHq = onOpenTesterHq,
+            onTesterHqButtonPositioned = onTesterHqButtonPositioned,
         )
         SidebarSearch(
             query = query,

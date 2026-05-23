@@ -16,12 +16,22 @@ class OnboardingPreferences(
 
     fun hasSeenOnboarding(): Boolean = prefs.getBoolean(KEY_HAS_SEEN_ONBOARDING, false)
 
+    fun hasShownSetupOnboarding(): Boolean = prefs.getBoolean(KEY_HAS_SHOWN_SETUP_ONBOARDING, false)
+
     fun setHasSeenOnboarding(value: Boolean) {
-        prefs.edit().putBoolean(KEY_HAS_SEEN_ONBOARDING, value).apply()
+        prefs.edit()
+            .putBoolean(KEY_HAS_SEEN_ONBOARDING, value)
+            .putBoolean(KEY_HAS_SHOWN_SETUP_ONBOARDING, value)
+            .apply()
+    }
+
+    fun markSetupOnboardingShown() {
+        prefs.edit().putBoolean(KEY_HAS_SHOWN_SETUP_ONBOARDING, true).apply()
     }
 
     private companion object {
         const val PREFS_NAME = "remodex_onboarding"
         const val KEY_HAS_SEEN_ONBOARDING = "codex.hasSeenOnboarding"
+        const val KEY_HAS_SHOWN_SETUP_ONBOARDING = "remodex.hasShownSetupOnboarding"
     }
 }

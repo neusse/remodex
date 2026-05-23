@@ -19,13 +19,19 @@ import com.remodex.mobile.ui.sidebar.rememberSidebarColorPalette
 @Composable
 fun TerminalWindowsSetupGuide(
     modifier: Modifier = Modifier,
+    scrollable: Boolean = false,
 ) {
     val colors = rememberSidebarColorPalette()
-    Column(
-        modifier =
+    val contentModifier =
+        if (scrollable) {
             modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+        } else {
+            modifier.fillMaxWidth()
+        }
+    Column(
+        modifier = contentModifier,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(

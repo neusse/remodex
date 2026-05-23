@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,6 +33,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -84,6 +87,9 @@ fun SidebarBrandHeader(
     onMoreMenu: SidebarMoreMenuCallbacks,
     onOpenDesktop: () -> Unit,
     onOpenSettings: () -> Unit,
+    showTesterHq: Boolean,
+    onOpenTesterHq: () -> Unit,
+    onTesterHqButtonPositioned: (LayoutCoordinates) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var moreExpanded by remember { mutableStateOf(false) }
@@ -122,6 +128,15 @@ fun SidebarBrandHeader(
                         fontWeight = FontWeight.Bold,
                     ),
                 color = colors.primaryText,
+            )
+        }
+        if (showTesterHq) {
+            SidebarHeaderIconButton(
+                icon = { Icon(Icons.Outlined.EmojiEvents, contentDescription = null, tint = colors.primaryText, modifier = Modifier.size(20.dp)) },
+                contentDescription = stringResource(R.string.nav_tester_hq),
+                colors = colors,
+                onClick = onOpenTesterHq,
+                modifier = Modifier.onGloballyPositioned(onTesterHqButtonPositioned),
             )
         }
         SidebarHeaderIconButton(

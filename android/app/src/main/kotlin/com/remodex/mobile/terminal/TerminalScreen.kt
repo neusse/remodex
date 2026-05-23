@@ -345,7 +345,7 @@ fun TerminalScreen(
                             .heightIn(max = 560.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    TerminalWindowsSetupGuide()
+                    TerminalWindowsSetupGuide(scrollable = true)
                     TerminalPrimaryButton(
                         text = "Close",
                         onClick = { showWindowsHelp = false },

@@ -165,10 +165,8 @@ fun BridgeConnectionTestPanel(
                 text =
                     "Apply saves pairing from the JSON. Connect builds ws URL as relay + / + sessionId. " +
                         "Bearer defaults to sessionId. " +
-                        "Emulator: set relay host override to 10.0.2.2. " +
-                        "Physical phone: same Wiâ€‘Fi as the PC, override host = PC LAN IP (e.g. 192.168.x.x); " +
-                        "127.0.0.1 in the JSON always means â€œthis deviceâ€, not your computer. " +
-                        "Windows: allow Node through the firewall for the relay port (default 9000).",
+                        "For local testing, use the Settings host override instead of exposing the saved route. " +
+                        "Windows: allow Node through the firewall for the local bridge port.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -214,9 +212,9 @@ fun BridgeConnectionTestPanel(
                 value = relayHostOverride,
                 onValueChange = { relayHostOverride = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Relay host override (required if relay is 127.0.0.1)") },
+                label = { Text("Local connection host override") },
                 singleLine = true,
-                placeholder = { Text("PC IPv4 e.g. 192.168.1.10 â€” emulator: 10.0.2.2") },
+                placeholder = { Text("Computer LAN host or emulator host") },
             )
             Button(
                 onClick = {
@@ -230,7 +228,7 @@ fun BridgeConnectionTestPanel(
                                         AppContainer.secureStore,
                                     )
                                 }
-                                "Pairing saved. Relay=${payload.relay.take(48)}â€¦"
+                                "Pairing saved. Connection route stored."
                             } catch (e: Exception) {
                                 "Apply failed: ${e.message ?: e::class.simpleName}"
                             }
@@ -251,16 +249,13 @@ fun BridgeConnectionTestPanel(
                                     }
                                 val relayRaw =
                                     snap.relayUrl?.trim()?.takeIf { it.isNotEmpty() }
-                                        ?: error("No relay URL â€” apply QR JSON first.")
+                                        ?: error("No saved pairing route â€” apply QR JSON first.")
                                 if (relayHostOverride.trim().isEmpty() &&
                                     isLoopbackRelayHost(relayRaw)
                                 ) {
                                     error(
-                                        "Relay uses 127.0.0.1 / localhost â€” on the phone that means " +
-                                            "the phone itself, not your PC, so nothing is listening on port 9000 here. " +
-                                            "Type your computer's Wiâ€‘Fi IP in \"Relay host override\" " +
-                                            "(ipconfig â†’ IPv4, e.g. 192.168.1.x). " +
-                                            "Emulator: use 10.0.2.2. Same Wiâ€‘Fi as the PC; Windows: firewall allow Node on 9000.",
+                                        "The saved local route points back to this device instead of your PC. " +
+                                            "Set the computer host override in Settings, then try again.",
                                     )
                                 }
                                 withContext(Dispatchers.IO) {
@@ -623,7 +618,7 @@ private fun buildPersistedStateReport(): String {
     return buildString {
         appendLine("Relay snapshot")
         appendLine("  sessionId: ${sidShort.ifEmpty { "(none)" }}")
-        appendLine("  relayUrl: ${snap.relayUrl?.take(80) ?: "(none)"}")
+        appendLine("  pairingRouteSaved: ${!snap.relayUrl.isNullOrBlank()}")
         appendLine("  macDeviceId: ${snap.relayMacDeviceId ?: "(none)"}")
         appendLine("  lastTrustedMacDeviceId: ${snap.lastTrustedMacDeviceId ?: "(none)"}")
         appendLine("  relayLastAppliedBridgeOutboundSeq: ${snap.relayLastAppliedBridgeOutboundSeq ?: "(none)"}")

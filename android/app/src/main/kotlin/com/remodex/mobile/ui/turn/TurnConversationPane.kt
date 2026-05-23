@@ -239,6 +239,7 @@ fun TurnConversationPane(
         remember(threadId, threads) {
             threads.firstOrNull { it.id == threadId }
         }
+    val conversationBackground = MaterialTheme.colorScheme.background
     val persistedPlanModeEnabled = activeThread?.collaborationMode == CodexCollaborationModeKind.plan
     val isPlanModeEnabled = pendingPlanModeEnabled ?: persistedPlanModeEnabled
     fun setPlanModeEnabled(enabled: Boolean) {
@@ -1396,6 +1397,7 @@ fun TurnConversationPane(
         modifier =
             modifier
                 .fillMaxSize()
+                .background(conversationBackground)
     ) {
         Box(
             modifier =

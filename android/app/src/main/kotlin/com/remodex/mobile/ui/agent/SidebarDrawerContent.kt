@@ -145,6 +145,15 @@ fun SidebarDrawerContent(
                         navController.navigate(AppRoutes.Settings)
                     }
                 },
+                onOpenTesterHq = {
+                    drawerScope.launch {
+                        showTesterHqCoachmark = false
+                        closeDrawer()
+                        if (FeatureFlags.betaEngagementEnabled) {
+                            navController.navigate(AppRoutes.TesterHq)
+                        }
+                    }
+                },
                 onOpenTerminal = {
                     drawerScope.launch {
                         closeDrawer()
@@ -158,6 +167,7 @@ fun SidebarDrawerContent(
                     }
                 },
                 onThreadSelected = closeDrawer,
+                onTesterHqButtonPositioned = { trophyLayoutCoords = it },
                 modifier =
                     Modifier
                         .weight(1f)

@@ -19,17 +19,18 @@ val hasReleaseSigning =
         listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
             .all { key -> !keystoreProperties.getProperty(key).isNullOrBlank() }
 
-fun betaConfigValue(name: String): String =
+fun configValue(name: String): String =
     (providers.gradleProperty(name).orNull ?: System.getenv(name) ?: "").trim()
 
 fun quotedBuildConfigString(value: String): String =
     "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
-val betaApiBaseUrl = betaConfigValue("BETA_API_BASE_URL")
-val betaApiKey = betaConfigValue("BETA_API_KEY")
+val betaApiBaseUrl = configValue("BETA_API_BASE_URL")
+val betaApiKey = configValue("BETA_API_KEY")
 val betaEnabled =
-    betaConfigValue("BETA_ENABLED").equals("true", ignoreCase = true) &&
+    configValue("BETA_ENABLED").equals("true", ignoreCase = true) &&
         betaApiBaseUrl.isNotBlank()
+val defaultRelayUrl = configValue("PHODEX_DEFAULT_RELAY_URL")
 
 android {
     namespace = "com.remodex.mobile"
@@ -45,6 +46,7 @@ android {
         buildConfigField("boolean", "BETA_ENABLED", betaEnabled.toString())
         buildConfigField("String", "BETA_API_BASE_URL", quotedBuildConfigString(betaApiBaseUrl))
         buildConfigField("String", "BETA_API_KEY", quotedBuildConfigString(betaApiKey))
+        manifestPlaceholders["PHODEX_DEFAULT_RELAY_URL"] = defaultRelayUrl
     }
 
     signingConfigs {

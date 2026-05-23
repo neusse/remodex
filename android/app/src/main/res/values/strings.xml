@@ -312,7 +312,6 @@
     <string name="trusted_pair_summary_title">Trusted pair</string>
     <string name="trusted_pair_summary_connected">Trusted pairing active</string>
     <string name="trusted_pair_summary_not_connected">Trusted pairing saved</string>
-    <string name="trusted_pair_summary_relay">Relay: %1$s</string>
     <string name="trusted_pair_summary_device">PC: &#8230;%1$s</string>
     <string name="thread_rename_dialog_title">Rename thread</string>
     <string name="thread_rename_dialog_label">Thread name</string>
@@ -326,7 +325,7 @@
     <string name="archived_chats_empty">No archived threads.</string>
     <string name="settings_section_appearance">Appearance</string>
     <string name="settings_section_connection">Connection</string>
-    <string name="settings_local_relay_host_override_label">Local relay host override</string>
+    <string name="settings_local_relay_host_override_label">Local connection host override</string>
     <string name="settings_local_relay_host_override_placeholder">Computer LAN IP or emulator host</string>
     <string name="settings_section_notifications">Notifications</string>
     <string name="settings_section_usage">Usage &amp; rate limits</string>
@@ -411,13 +410,15 @@
     <string name="about_remodex_pairing_title">Pairing</string>
     <string name="about_remodex_pairing_body">Use the QR flow to connect to the bridge on your computer.</string>
     <string name="whats_new_title">What\'s new</string>
-    <string name="whats_new_intro">Remodex 0.1.5 changelog.</string>
+    <string name="whats_new_intro">Remodex 0.1.7 changelog.</string>
     <string name="whats_new_added_title">Added</string>
-    <string name="whats_new_added_body">- Added Tailscale support for easier local-first connectivity outside the LAN.&#10;- Added the first Android terminal add-on flow with native SSH support, saved profiles, trusted hosts, multiple sessions, setup help, input handling, and terminal UI wiring.&#10;- Upgraded remodex-host to 0.3.0.&#10;- Added a host diagnostics panel.&#10;- Added a new animated pet asset set with improved customization/setup assets.</string>
-    <string name="whats_new_improved_title">Improved</string>
-    <string name="whats_new_improved_body">- Improved setup customization and bundled host configuration.&#10;- Improved Windows bridge compatibility, including command resolution, image preview generation, and cross-platform IPC tests.&#10;- Improved plan UI presentation and interaction behavior.&#10;- Strengthened Android and host-side security validation/runtime checks.</string>
+    <string name="whats_new_added_body">- Added native mobile steering controls for active turns.&#10;- Added stacked Git actions for commit, push, and pull request flows, with progress updates.&#10;- Added pull request creation/opening support from the mobile Git flow, with browser fallback when GitHub CLI is unavailable.&#10;- Added customizable user message bubble colors in Settings.&#10;- Added a redesigned first-run onboarding flow with setup steps and copyable commands.&#10;- Added Italian localization resources.&#10;- Added beta missions for Searches UI and active-turn steering.</string>
+    <string name="whats_new_changed_title">Changed</string>
+    <string name="whats_new_changed_body">- Redesigned the sidebar with project/chat tabs, grouped project controls, floating actions, and updated thread rows.&#10;- Reworked the new-thread/project picker into a clearer multi-step flow.&#10;- Refreshed the repository diff sheet with updated tabs, scope controls, path copy support, and revised visual chrome.&#10;- Updated terminal screens, profile forms, setup help, session list, and accessory keys to match the newer app chrome.&#10;- Updated conversation, composer, header, popup, and plan accessory styling.&#10;- Bumped Android version to 0.1.6 / versionCode 14.</string>
     <string name="whats_new_fixed_title">Fixed</string>
-    <string name="whats_new_fixed_body">- Fixed Windows bridge gaps caused by Unix-only assumptions.&#10;- Fixed newly created chats sometimes not appearing immediately in the mobile thread list.&#10;- Fixed mojibake in Android user-facing strings.&#10;- Fixed branch selector pill border inconsistency.</string>
+    <string name="whats_new_fixed_body">- Improved live timeline reconciliation to reduce duplicate assistant/user messages.&#10;- Preserved better item-aware ordering when history and live events arrive out of order.&#10;- Improved handling for turn lifecycle events, completed assistant messages, mirrored user messages, and plan updates.&#10;- Improved insertion of mirrored user messages using turn IDs and event timestamps.&#10;- Improved assistant streaming fallback when item IDs are missing or incomplete.&#10;- Improved language preference handling for system locale display.</string>
+    <string name="whats_new_testing_title">Testing</string>
+    <string name="whats_new_testing_body">- Added or updated unit coverage for history merge, incoming event routing, timeline store behavior, Git stacked actions, onboarding flow logic, user bubble colors, and plan accessory cards.</string>
     <string name="nav_pairing_scan">Scan pairing QR</string>
     <string name="onboarding_app_name">Remodex</string>
     <string name="onboarding_welcome_subtitle">Control Codex from your phone.</string>
@@ -450,7 +451,7 @@
     <string name="onboarding_cta_scan_qr">Scan QR Code</string>
     <string name="onboarding_open_source">Open source</string>
     <string name="onboarding_copy_command">Copy command</string>
-    <string name="onboarding_github_repo_url">https://github.com/Emanuele-web04/remodex</string>
+    <string name="onboarding_github_repo_url">https://github.com/stivy-01/remodex</string>
     <string name="qr_scanner_title">Scan QR</string>
     <string name="qr_scanner_grant_camera">Allow camera</string>
     <string name="qr_scanner_camera_denied">Camera permission is required to scan the pairing QR.</string>

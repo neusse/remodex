@@ -55,8 +55,8 @@ class RootViewModel(
     }
 
     private fun computeInitialPhase(): RootPhase {
-        // TODO: set to false after onboarding UI QA — restores one-time first-run flow.
-        if (FORCE_ONBOARDING_ON_EVERY_COLD_START || !onboardingPreferences.hasSeenOnboarding()) {
+        if (!onboardingPreferences.hasShownSetupOnboarding()) {
+            onboardingPreferences.markSetupOnboardingShown()
             return RootPhase.Onboarding
         }
         if (!hasRelayPairing()) {
@@ -336,9 +336,6 @@ class RootViewModel(
     }
 
     companion object {
-        /** When true, always open the 5-step onboarding on process start (QA only). */
-        private const val FORCE_ONBOARDING_ON_EVERY_COLD_START = true
-
         private const val AUTO_RECONNECT_AFTER_DROP_DELAY_MS = 1_000L
         private const val AUTO_RECONNECT_MIN_INTERVAL_MS = 5_000L
 
