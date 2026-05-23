@@ -22,6 +22,9 @@ build/
 *.p12
 *.key
 *.cer
+android/supabase/.temp/
+.cocoindex_code/
+upload-keystore.jks
 CodexMobile/BuildSupport/PrivateOverrides.xcconfig
 phodex-bridge/src/private-defaults.json
 security_best_practices_report.md
@@ -30,6 +33,9 @@ security_best_practices_report.md
 *.swp
 *.swo
 *~
+*.rej
+*.class
+tmp/
 output/
 
 # Minified JS bundles (not part of this project)
@@ -47,3 +53,17 @@ $TMP_PLACEHOLDER
 
 # VS Code
 .vscode/
+
+# Tauri logs
+remodex-host/src-tauri/target/
+remodex-host/src-tauri/*.log
+remodex-host/src-tauri/**/*.log
+
+# useless files
+deeplinks-D8FzxbSB.js
+desktop-tauri-roadmap.md
+IOS_UPSTREAM_DELTA_7C82966.md
+IOS_UPSTREAM_DELTA_C3A1C14.md
+main-Bw7nouYH.js
+piano.md
+prd.md
