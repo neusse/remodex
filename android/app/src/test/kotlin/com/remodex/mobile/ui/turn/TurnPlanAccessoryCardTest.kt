@@ -102,6 +102,36 @@ class TurnPlanAccessoryCardTest {
         )
     }
 
+    @Test
+    fun `proposed plan parser extracts plan body and leaves surrounding markdown`() {
+        val source =
+            """
+            Intro
+
+            <proposed_plan>
+            # Plan
+
+            - Do work
+            </proposed_plan>
+
+            Outro
+            """.trimIndent()
+
+        val extraction = ProposedPlanBlockParser.extract(source)
+
+        assertEquals("Intro\n\nOutro", extraction.visibleMarkdown)
+        assertEquals(1, extraction.plans.size)
+        assertEquals("# Plan\n\n- Do work", extraction.plans.single().markdown)
+    }
+
+    @Test
+    fun `proposed plan parser ignores empty plan tags`() {
+        val extraction = ProposedPlanBlockParser.extract("Before <proposed_plan> </proposed_plan> After")
+
+        assertEquals("Before  After", extraction.visibleMarkdown)
+        assertEquals(emptyList<ProposedPlanBlock>(), extraction.plans)
+    }
+
     private fun basePlanMessage(
         id: String = "id",
         isStreaming: Boolean = false,

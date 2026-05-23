@@ -49,6 +49,7 @@ import com.composables.icons.lucide.R as LucideR
 import com.remodex.mobile.ui.theme.RemodexGitAddition
 import com.remodex.mobile.ui.theme.RemodexPopupChrome
 import com.remodex.mobile.ui.theme.isAgentLightChrome
+import com.remodex.mobile.ui.sidebar.remodexFlatControlChrome
 
 /** Compact footnote / unified chip icon size. */
 internal val ComposerFootnoteIconDp = 13.dp
@@ -165,18 +166,15 @@ internal fun UnifiedComposerModelRuntimeChip(
             (hasModelChoice || hasReasoningChoice || canToggleFast || runtimeToolbarMenu.sections.any { it.items.any { item -> item.enabled } })
 
     Box {
-        val lightChrome = isAgentLightChrome()
         val showFastModeIcon = runtimeControls.serviceTier.selected.id != TURN_COMPOSER_RUNTIME_AUTO_ID
-        Surface(
+        val chipShape = RoundedCornerShape(999.dp)
+        Box(
             modifier =
                 modifier
                     .wrapContentWidth()
                     .widthIn(max = 136.dp)
-                    .border(RemodexPopupChrome.borderStroke(), RoundedCornerShape(999.dp))
+                    .remodexFlatControlChrome(chipShape)
                     .clickable(enabled = canOpenMenu) { expanded = true },
-            shape = RoundedCornerShape(999.dp),
-            color = RemodexPopupChrome.surfaceColor().copy(alpha = if (lightChrome) 0.92f else 0.72f),
-            contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -363,12 +361,14 @@ private fun ComposerRuntimeSegmentedTabs(
 ) {
     val shape = RoundedCornerShape(999.dp)
     Row(
-        modifier = modifier
-            .width(133.5.dp)
-            .height(22.5.dp)
-            .clip(shape)
-            .background(Color.White.copy(alpha = if (isAgentLightChrome()) 0.10f else 0.08f))
-            .padding(1.5.dp),
+        modifier =
+            modifier
+                .width(133.5.dp)
+                .height(22.5.dp)
+                .clip(shape)
+                .border(RemodexPopupChrome.borderStroke(), shape)
+                .background(Color.White.copy(alpha = if (isAgentLightChrome()) 0.10f else 0.08f))
+                .padding(1.5.dp),
         horizontalArrangement = Arrangement.spacedBy(1.5.dp),
     ) {
         ComposerRuntimeSegmentTab(
@@ -501,16 +501,7 @@ private fun CompactFastModeSwitch(
             .height(19.5.dp)
             .clip(shape)
             .background(trackColor.copy(alpha = if (enabled) 1f else 0.42f))
-            .border(
-                width = 0.5.dp,
-                color =
-                    if (checked) {
-                        Color.White.copy(alpha = 0.36f)
-                    } else {
-                        MaterialTheme.colorScheme.outline.copy(alpha = 0.36f)
-                    },
-                shape = shape,
-            )
+            .border(RemodexPopupChrome.borderStroke(), shape)
             .clickable(
                 enabled = enabled,
                 interactionSource = remember { MutableInteractionSource() },

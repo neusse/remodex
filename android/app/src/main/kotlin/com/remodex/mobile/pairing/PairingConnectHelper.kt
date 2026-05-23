@@ -25,11 +25,11 @@ fun buildWebSocketConnectParams(
 ): Pair<String, String> {
     val relayRaw =
         snap.relayUrl?.trim()?.takeIf { it.isNotEmpty() }
-            ?: error("No relay URL — scan a pairing QR first.")
+            ?: error("No saved pairing route — scan a pairing QR first.")
     if (relayHostOverride.trim().isEmpty() && isLoopbackRelayHost(relayRaw)) {
         throw LoopbackRelayException(
-            "Relay uses 127.0.0.1 / localhost — on the phone that points to the device itself, not your PC. " +
-                "Enter your computer's Wi‑Fi IPv4 (e.g. from ipconfig). Android emulator: try 10.0.2.2.",
+            "The saved local route points back to this phone instead of your computer. " +
+                "Enter your computer's Wi-Fi IPv4 from Settings. Android emulator: use the emulator host address.",
         )
     }
     val relay = applyRelayHostOverride(relayRaw, relayHostOverride)
@@ -41,8 +41,9 @@ fun buildWebSocketConnectParams(
 }
 
 /**
- * Disconnects and reconnects using [snap] when relay fields are present (parity iOS `toggleConnection`
- * after bridge update, including service-tier capability prompts).
+ * Reconnects using [snap] when relay fields are present (parity iOS `toggleConnection`
+ * after bridge update, including service-tier capability prompts). [CodexRepository.connect] already
+ * replaces any live transport while preserving presentation state.
  */
 suspend fun reconnectUsingSavedRelaySnapshot(
     repository: CodexRepository,
@@ -50,7 +51,6 @@ suspend fun reconnectUsingSavedRelaySnapshot(
     relayHostOverride: String = "",
 ) {
     if (snap.relayUrl.isNullOrBlank() || snap.relaySessionId.isNullOrBlank()) return
-    repository.disconnect()
     val (url, token) = buildWebSocketConnectParams(snap, relayHostOverride)
     repository.connect(serverUrl = url, token = token, role = null)
 }

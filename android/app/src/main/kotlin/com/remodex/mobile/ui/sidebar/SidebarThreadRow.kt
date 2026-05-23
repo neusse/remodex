@@ -8,28 +8,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,7 +31,6 @@ import com.remodex.mobile.R
 import com.remodex.mobile.core.model.JSONValue
 import com.remodex.mobile.core.model.CodexThread
 import com.remodex.mobile.core.model.CodexThreadSyncState
-import com.remodex.mobile.ui.theme.RemodexDropdownMenu
 
 data class SidebarActiveChatMetadata(
     val branch: String? = null,
@@ -65,166 +52,95 @@ fun SidebarThreadRow(
     modifier: Modifier = Modifier,
 ) {
     val colors = rememberSidebarColorPalette()
-    val rowShape = RoundedCornerShape(8.dp)
-    var menuExpanded by remember(thread.id) { mutableStateOf(false) }
-    val metadataTokens = remember(thread, selected, activeMetadata, colors) {
-        if (selected) thread.activeMetadataTokens(colors, activeMetadata) else emptyList()
-    }
-    Row(
+    val rowShape = RoundedCornerShape(12.dp)
+    val metadataTokens =
+        remember(thread, selected, activeMetadata, colors) {
+            if (selected) thread.activeMetadataTokens(colors, activeMetadata) else emptyList()
+        }
+    Column(
         modifier =
             modifier
                 .fillMaxWidth()
-                .heightIn(min = if (selected) 56.dp else 42.dp)
-                .clip(rowShape)
-                .background(
-                    color =
-                        if (selected) {
-                            colors.selectedRow
-                        } else {
-                            Color.Transparent
-                        },
-                )
-                .combinedClickable(
-                    onClick = onSelect,
-                    onLongClick = { onRenameRequest?.invoke() },
-                )
-                .padding(end = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+                .padding(horizontal = 4.dp, vertical = 2.dp),
     ) {
-        Box(
-            modifier = Modifier.width(6.dp).height(if (selected) 56.dp else 42.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (isRunning) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(8.dp),
-                    strokeWidth = 1.5.dp,
-                    color = colors.green,
-                    trackColor = colors.green.copy(alpha = 0.18f),
-                )
-            } else if (selected) {
-                Box(
-                    modifier =
-                        Modifier
-                            .width(3.dp)
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(colors.green),
-                )
-            }
-        }
-        Column(
+        Row(
             modifier =
                 Modifier
-                    .weight(1f)
-                    .padding(start = 7.dp, top = 6.dp, bottom = 6.dp),
-            verticalArrangement = Arrangement.Center,
+                    .fillMaxWidth()
+                    .heightIn(min = 40.dp)
+                    .clip(rowShape)
+                    .background(if (selected) colors.selectedRow else Color.Transparent)
+                    .combinedClickable(
+                        onClick = onSelect,
+                        onLongClick = { onRenameRequest?.invoke() },
+                    )
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = thread.displayTitle,
-                    style =
-                        MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 13.sp,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                        ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = colors.primaryText,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            val archivedNote =
-                if (thread.syncState == CodexThreadSyncState.archivedLocal) {
-                    stringResource(R.string.sidebar_thread_archived_hint)
-                } else {
-                    null
+            Text(
+                text = thread.displayTitle,
+                style =
+                    MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 14.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = colors.primaryText,
+                modifier = Modifier.weight(1f),
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (metadataTokens.isNotEmpty() && selected) {
+                    Text(
+                        text = metadataTokens.first().text,
+                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp),
+                        color = metadataTokens.first().color,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
-            if (archivedNote != null) {
-                Text(
-                    text = archivedNote,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.mutedText,
-                    maxLines = 1,
-                )
-            }
-            if (metadataTokens.isNotEmpty()) {
-                Row(
-                    modifier = Modifier.padding(top = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    metadataTokens.forEachIndexed { index, token ->
-                        if (index > 0) {
-                            Text(
-                                text = "·",
-                                style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp),
-                                color = colors.mutedText,
-                            )
-                        }
-                        Text(
-                            text = token.text,
-                            style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp),
-                            color = token.color,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                val rel = SidebarRelativeTimeFormatter.compactLabel(thread)
+                if (rel != null) {
+                    Text(
+                        text = rel,
+                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
+                        color = colors.mutedText,
+                        maxLines = 1,
+                    )
+                }
+                when {
+                    isRunning -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(8.dp),
+                            strokeWidth = 1.5.dp,
+                            color = colors.accent,
+                            trackColor = colors.accent.copy(alpha = 0.2f),
+                        )
+                    }
+                    selected -> {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(colors.accent),
                         )
                     }
                 }
             }
         }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            val rel = SidebarRelativeTimeFormatter.compactLabel(thread)
-            if (rel != null) {
-                Text(
-                    text = rel,
-                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp),
-                    color = colors.mutedText,
-                    maxLines = 1,
-                )
-            }
-            if (onRenameRequest != null || onDeleteLocalRequest != null) {
-                Box {
-                    IconButton(
-                        onClick = { menuExpanded = true },
-                        modifier = Modifier.size(24.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.MoreVert,
-                            contentDescription = stringResource(R.string.sidebar_thread_actions_cd),
-                            tint = colors.mutedText,
-                        )
-                    }
-                    RemodexDropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                    ) {
-                        if (onRenameRequest != null) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.sidebar_thread_rename)) },
-                                leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
-                                onClick = {
-                                    menuExpanded = false
-                                    onRenameRequest()
-                                },
-                            )
-                        }
-                        if (onDeleteLocalRequest != null) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.sidebar_thread_delete_local)) },
-                                leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
-                                onClick = {
-                                    menuExpanded = false
-                                    onDeleteLocalRequest()
-                                },
-                            )
-                        }
-                    }
-                }
-            }
+        if (thread.syncState == CodexThreadSyncState.archivedLocal) {
+            Text(
+                text = stringResource(R.string.sidebar_thread_archived_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.mutedText,
+                maxLines = 1,
+                modifier = Modifier.padding(start = 16.dp, top = 2.dp),
+            )
         }
     }
 }
@@ -336,9 +252,10 @@ private fun CodexThread.firstMetadataInt(vararg keys: String): Int? {
 }
 
 private fun String.compactModelLabel(): String {
-    val cleaned = trim()
-        .removePrefix("gpt-")
-        .replace("reasoning", "", ignoreCase = true)
-        .trim('-', ' ')
+    val cleaned =
+        trim()
+            .removePrefix("gpt-")
+            .replace("reasoning", "", ignoreCase = true)
+            .trim('-', ' ')
     return cleaned.ifEmpty { trim() }
 }

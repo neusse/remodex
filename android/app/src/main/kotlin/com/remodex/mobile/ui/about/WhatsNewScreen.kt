@@ -67,12 +67,16 @@ fun WhatsNewScreen(
                 body = stringResource(R.string.whats_new_added_body),
             )
             LocalInfoSection(
-                title = stringResource(R.string.whats_new_improved_title),
-                body = stringResource(R.string.whats_new_improved_body),
+                title = stringResource(R.string.whats_new_changed_title),
+                body = stringResource(R.string.whats_new_changed_body),
             )
             LocalInfoSection(
                 title = stringResource(R.string.whats_new_fixed_title),
                 body = stringResource(R.string.whats_new_fixed_body),
+            )
+            LocalInfoSection(
+                title = stringResource(R.string.whats_new_testing_title),
+                body = stringResource(R.string.whats_new_testing_body),
             )
         }
     }

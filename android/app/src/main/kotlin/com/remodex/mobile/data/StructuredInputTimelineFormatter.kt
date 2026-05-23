@@ -36,6 +36,15 @@ internal object StructuredInputTimelineFormatter {
 
     }
 
+    fun proposedPlanMarkdown(questions: List<PendingStructuredInputQuestion>): String? {
+        val question =
+            questions.firstOrNull { q ->
+                val marker = listOf(q.header, q.question, q.id).joinToString(" ").lowercase()
+                marker.contains("proposed plan") || marker.contains("proposed_plan")
+            } ?: return null
+        return sanitizeQuestion(question).takeIf { it.isNotEmpty() }
+    }
+
 
 
     private fun sanitizeQuestion(question: PendingStructuredInputQuestion): String {

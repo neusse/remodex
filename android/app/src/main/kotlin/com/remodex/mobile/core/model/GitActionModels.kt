@@ -346,25 +346,27 @@ private fun stringDictionary(json: Map<String, JSONValue>?): Map<String, String>
 }
 
 enum class TurnGitActionKind {
+    viewRepositoryDiff,
     syncNow,
     initialize,
     commit,
     push,
     commitAndPush,
+    commitPushAndPullRequest,
     createPR,
-    previewCommitPushToast,
     discardRuntimeChangesAndSync;
 
     val title: String
         get() =
             when (this) {
+                viewRepositoryDiff -> "Repository diff"
                 syncNow -> "Update"
                 initialize -> "Initialize Git"
                 commit -> "Commit"
                 push -> "Push"
                 commitAndPush -> "Commit & Push"
+                commitPushAndPullRequest -> "Commit, Push & PR"
                 createPR -> "Create PR"
-                previewCommitPushToast -> "Preview Commit & Push Toast"
                 discardRuntimeChangesAndSync -> "Discard Local Changes"
             }
 }

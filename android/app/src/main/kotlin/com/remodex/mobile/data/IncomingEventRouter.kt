@@ -8,6 +8,7 @@ import com.remodex.mobile.core.model.CodexPlanStep
 import com.remodex.mobile.core.model.CodexPlanStepStatus
 import com.remodex.mobile.core.model.CodexMessageRole
 import com.remodex.mobile.core.model.CodexThread
+import com.remodex.mobile.core.model.GitStackedActionProgressEvent
 import com.remodex.mobile.core.model.JSONValue
 import com.remodex.mobile.core.model.PendingApprovalDecision
 import com.remodex.mobile.core.model.PendingApprovalRequest
@@ -77,6 +78,7 @@ internal class IncomingEventRouter(
         turnId: String?,
         kind: RunCompletionAttentionKind,
     ) -> Unit = { _, _, _ -> },
+    private val onGitStackedActionProgress: (GitStackedActionProgressEvent) -> Unit = { _ -> },
 ) {
     private val threadIdByTurnId = ConcurrentHashMap<String, String>()
 
@@ -105,6 +107,9 @@ internal class IncomingEventRouter(
         if (m == "codex/event" && tryConsumeCodexTokenCountEnvelope(obj)) {
             return
         }
+        if (m == "codex/event" && tryConsumeCodexTurnLifecycleEnvelope(obj)) {
+            return
+        }
         if (m == "codex/event" && tryConsumeCodexCommandExecutionEnvelope(obj)) {
             return
         }
@@ -123,8 +128,8 @@ internal class IncomingEventRouter(
             -> handleAgentDelta(obj)
             "item/completed",
             "codex/event/item_completed",
-            "codex/event/agent_message",
             -> handleItemCompleted(obj)
+            "codex/event/agent_message" -> handleItemCompleted(obj, completesTurn = true)
             "codex/event/user_message" -> handleUserMirrored(obj)
             "codex/event/background_event" -> handleBackgroundEvent(obj)
             "codex/event/image_generation_end" -> handleImageGenerationEnd(obj)
@@ -164,6 +169,7 @@ internal class IncomingEventRouter(
             -> handleErrorNotification(obj)
             "account/rateLimits/updated" -> onRateLimitsUpdated(obj)
             "thread/tokenUsage/updated" -> handleThreadTokenUsagePush(obj)
+            "git/stackedAction/progress" -> handleGitStackedActionProgress(obj)
             else -> {
                 val nm = normalizeMethod(m)
                 when {
@@ -193,6 +199,23 @@ internal class IncomingEventRouter(
         if (!eventType.contains("plan")) return false
         handleTurnPlanUpdated(p)
         return true
+    }
+
+    private fun tryConsumeCodexTurnLifecycleEnvelope(params: Map<String, JSONValue>?): Boolean {
+        val p = params ?: return false
+        val msg = p["msg"]?.objectValue ?: p["event"]?.objectValue ?: return false
+        val eventType = msg["type"]?.stringValue?.trim()?.lowercase()?.replace("_", "")?.replace("-", "") ?: return false
+        return when (eventType) {
+            "taskstarted", "turnstarted" -> {
+                handleTurnStarted(p)
+                true
+            }
+            "taskcomplete", "taskcompleted", "turncomplete", "turncompleted" -> {
+                handleTurnCompleted(p)
+                true
+            }
+            else -> false
+        }
     }
 
     private fun tryConsumeCodexTokenCountEnvelope(params: Map<String, JSONValue>?): Boolean {
@@ -499,17 +522,20 @@ internal class IncomingEventRouter(
         }
     }
 
-    private fun handleItemCompleted(params: Map<String, JSONValue>?) {
+    private fun handleItemCompleted(
+        params: Map<String, JSONValue>?,
+        completesTurn: Boolean = false,
+    ) {
         val p = params ?: return
         val ev = envelopeEventObject(p)
         val itemObj = IncomingNotificationParsers.extractIncomingItemObject(p, ev)
         if (itemObj == null) {
-            handleLegacyAgentCompleted(p)
+            handleLegacyAgentCompleted(p, completesTurn)
             return
         }
         val decoded = ThreadHistoryDecoder.decodeCompletedItem(itemObj)
         if (decoded == null) {
-            handleLegacyAgentCompleted(p)
+            handleLegacyAgentCompleted(p, completesTurn)
             return
         }
         val threadId = resolveThreadId(p) ?: IncomingNotificationParsers.extractThreadId(p) ?: return
@@ -534,12 +560,22 @@ internal class IncomingEventRouter(
                                 assistantPhase = assistantPhase,
                             )
                         }
+                        if (completesTurn) {
+                            onTurnFinished(threadId)
+                        }
                     }
                     CodexMessageRole.user -> {
                         val text = decoded.text.trim()
                         if (text.isEmpty() && decoded.attachments.isEmpty()) return
+                        val createdAt = IncomingNotificationParsers.extractCreatedAt(p)
                         scope.launch {
-                            messageTimeline.appendMirroredUser(threadId, turnId, text, decoded.attachments)
+                            messageTimeline.appendMirroredUser(
+                                threadId = threadId,
+                                turnId = turnId,
+                                text = text,
+                                attachments = decoded.attachments,
+                                createdAt = createdAt,
+                            )
                         }
                     }
                     else -> handleLegacyAgentCompleted(p)
@@ -613,7 +649,10 @@ internal class IncomingEventRouter(
         return IncomingNotificationParsers.extractItemId(params)
     }
 
-    private fun handleLegacyAgentCompleted(params: Map<String, JSONValue>) {
+    private fun handleLegacyAgentCompleted(
+        params: Map<String, JSONValue>,
+        completesTurn: Boolean = false,
+    ) {
         val threadId = resolveThreadId(params) ?: return
         val turnId = IncomingNotificationParsers.extractTurnId(params)
         val itemId = IncomingNotificationParsers.extractItemId(params)
@@ -633,6 +672,9 @@ internal class IncomingEventRouter(
                 assistantPhase = assistantPhase,
             )
         }
+        if (completesTurn) {
+            onTurnFinished(threadId)
+        }
     }
 
     private fun handleUserMirrored(params: Map<String, JSONValue>?) {
@@ -640,8 +682,9 @@ internal class IncomingEventRouter(
         val turnId = IncomingNotificationParsers.extractTurnId(params)
         val threadId = resolveThreadId(params) ?: return
         markTurnActiveFromLiveEvent(threadId, turnId)
+        val createdAt = IncomingNotificationParsers.extractCreatedAt(params)
         scope.launch {
-            messageTimeline.appendMirroredUser(threadId, turnId, text)
+            messageTimeline.appendMirroredUser(threadId, turnId, text, createdAt = createdAt)
             if (!turnId.isNullOrBlank()) {
                 messageTimeline.ensureStreamingAssistantPlaceholder(threadId, turnId)
             }
@@ -773,12 +816,18 @@ internal class IncomingEventRouter(
         val explanation =
             firstString(p, listOf("explanation", "summary"))
                 ?: event?.let { firstString(it, listOf("explanation", "summary")) }
-        val steps = decodePlanSteps(p["plan"] ?: event?.get("plan"))
+                ?: (p["plan"] ?: event?.get("plan"))?.objectValue?.let { firstString(it, listOf("explanation", "summary")) }
+        val steps = decodePlanSteps(p["plan"] ?: p["steps"] ?: event?.get("plan") ?: event?.get("steps"))
+        val text =
+            firstString(p, listOf("text", "markdown", "content"))
+                ?: event?.let { firstString(it, listOf("text", "markdown", "content")) }
+                ?: (p["plan"] ?: event?.get("plan"))?.objectValue?.let { firstString(it, listOf("text", "markdown", "content")) }
         scope.launch {
             messageTimeline.upsertPlanMessage(
                 threadId = threadId,
                 turnId = turnId,
                 itemId = null,
+                text = text,
                 explanation = explanation,
                 steps = steps,
                 isStreaming = true,
@@ -1130,6 +1179,17 @@ internal class IncomingEventRouter(
 
     private suspend fun appendStructuredInputTimelineMarker(request: PendingStructuredInputRequest) {
         val threadId = request.threadId?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        val proposedPlan = StructuredInputTimelineFormatter.proposedPlanMarkdown(request.questions)
+        if (proposedPlan != null) {
+            messageTimeline.upsertPlanMessage(
+                threadId = threadId,
+                turnId = request.turnId?.trim()?.takeIf { it.isNotEmpty() },
+                itemId = request.id,
+                text = proposedPlan,
+                isStreaming = false,
+            )
+            return
+        }
         messageTimeline.appendStructuredInputPromptMarker(
             threadId = threadId,
             turnId = request.turnId?.trim()?.takeIf { it.isNotEmpty() },
@@ -1202,18 +1262,23 @@ internal class IncomingEventRouter(
     }
 
     private fun decodePlanSteps(value: JSONValue?): List<CodexPlanStep> {
-        val items = value?.arrayValue ?: return emptyList()
+        val objectValue = value?.objectValue
+        val items =
+            value?.arrayValue
+                ?: objectValue?.get("steps")?.arrayValue
+                ?: objectValue?.get("items")?.arrayValue
+                ?: return emptyList()
         return items.mapNotNull { item ->
             val objectValue = item.objectValue ?: return@mapNotNull null
-            val step = firstString(objectValue, listOf("step")) ?: return@mapNotNull null
+            val step = firstString(objectValue, listOf("step", "text", "description", "title")) ?: return@mapNotNull null
             val rawStatus = firstString(objectValue, listOf("status")) ?: return@mapNotNull null
             val normalizedStatus =
                 rawStatus.lowercase().replace("_", "").replace("-", "")
             val status =
                 when (normalizedStatus) {
                     "pending" -> CodexPlanStepStatus.pending
-                    "inprogress" -> CodexPlanStepStatus.inProgress
-                    "completed" -> CodexPlanStepStatus.completed
+                    "inprogress", "running", "active", "started" -> CodexPlanStepStatus.inProgress
+                    "completed", "complete", "done", "finished" -> CodexPlanStepStatus.completed
                     else -> null
                 } ?: return@mapNotNull null
             CodexPlanStep(step = step, status = status)
@@ -1248,5 +1313,19 @@ internal class IncomingEventRouter(
                 put(k, JSONValue.toJsonElement(child))
             }
         }
+    }
+
+    private fun handleGitStackedActionProgress(params: Map<String, JSONValue>?) {
+        val progressId = params?.get("progressId")?.stringValue?.trim().orEmpty()
+        val phase = params?.get("phase")?.stringValue?.trim().orEmpty()
+        val status = params?.get("status")?.stringValue?.trim().orEmpty()
+        if (progressId.isEmpty() || phase.isEmpty() || status.isEmpty()) return
+        onGitStackedActionProgress(
+            GitStackedActionProgressEvent(
+                progressId = progressId,
+                phase = phase,
+                status = status,
+            ),
+        )
     }
 }

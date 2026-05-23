@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.PopupProperties
@@ -32,16 +33,24 @@ object RemodexPopupChrome {
         }
 
     @Composable
+    fun borderWidth(): Dp =
+        if (isAgentLightChrome()) {
+            1.dp
+        } else {
+            0.5.dp
+        }
+
+    @Composable
+    fun borderColor(accent: Boolean = false): Color =
+        when {
+            accent -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.72f)
+            isAgentLightChrome() -> AgentLightColors.Border
+            else -> Color.White.copy(alpha = 0.12f)
+        }
+
+    @Composable
     fun borderStroke(accent: Boolean = false): BorderStroke =
-        BorderStroke(
-            width = 0.5.dp,
-            color =
-                when {
-                    accent -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.72f)
-                    isAgentLightChrome() -> Color.White.copy(alpha = 0.62f)
-                    else -> Color.White.copy(alpha = 0.12f)
-                },
-        )
+        BorderStroke(borderWidth(), borderColor(accent))
 
     @Composable
     fun shadowElevation(panel: Boolean = false) =
@@ -53,6 +62,19 @@ object RemodexPopupChrome {
 
     @Composable
     fun tonalElevation() = if (isAgentLightChrome()) 0.dp else 2.dp
+
+    /** Subtle drop shadow for composer, env pills, and header icon buttons. */
+    @Composable
+    fun elevatedControlShadowElevation(): Dp =
+        if (isAgentLightChrome()) {
+            4.dp
+        } else {
+            2.dp
+        }
+
+    @Composable
+    fun elevatedControlShadowColor(): Color =
+        Color.Black.copy(alpha = if (isAgentLightChrome()) 0.055f else 0.085f)
 }
 
 @Composable
@@ -103,13 +125,18 @@ fun RemodexModalBottomSheet(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    sheetGesturesEnabled: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val panelShape = RemodexPopupChrome.PanelShape
+    // Border must not live on the sheet modifier: M3 sizes that node to the expanded slot,
+    // so a shaped border draws a taller outline than the visible sheet (especially in dark mode).
     ModalBottomSheet(
         modifier = modifier,
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
-        shape = RemodexPopupChrome.PanelShape,
+        sheetGesturesEnabled = sheetGesturesEnabled,
+        shape = panelShape,
         containerColor = RemodexPopupChrome.surfaceColor(),
         tonalElevation = RemodexPopupChrome.tonalElevation(),
         content = content,

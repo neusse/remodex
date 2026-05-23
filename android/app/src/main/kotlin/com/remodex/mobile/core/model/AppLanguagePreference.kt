@@ -8,7 +8,7 @@ enum class AppLanguagePreference {
     companion object {
         const val storageKey: String = "remodex.appLanguage"
 
-        val default: AppLanguagePreference = english
+        val default: AppLanguagePreference = system
 
         fun fromStorage(raw: String?): AppLanguagePreference =
             if (raw.isNullOrBlank()) {

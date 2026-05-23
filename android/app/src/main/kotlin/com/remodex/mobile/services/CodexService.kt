@@ -16,6 +16,7 @@ import com.remodex.mobile.core.model.CodexServiceTier
 import com.remodex.mobile.core.model.CodexTurnMention
 import com.remodex.mobile.core.model.CodexTurnSkillMention
 import com.remodex.mobile.core.model.CodexThread
+import com.remodex.mobile.core.model.GitStackedActionProgressEvent
 import com.remodex.mobile.core.model.JSONValue
 import com.remodex.mobile.core.model.PendingApprovalDecision
 import com.remodex.mobile.core.model.PendingApprovalRequest
@@ -45,8 +46,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -165,6 +169,11 @@ class CodexService(
     override val rateLimitsErrorMessage: StateFlow<String?> = _rateLimitsErrorMessage.asStateFlow()
 
     internal val _hasResolvedRateLimitsSnapshot = MutableStateFlow(false)
+
+    private val _gitStackedActionProgress =
+        MutableSharedFlow<GitStackedActionProgressEvent>(extraBufferCapacity = 16)
+    override val gitStackedActionProgress: SharedFlow<GitStackedActionProgressEvent> =
+        _gitStackedActionProgress.asSharedFlow()
     override val hasResolvedRateLimitsSnapshot: StateFlow<Boolean> = _hasResolvedRateLimitsSnapshot.asStateFlow()
 
     internal val _contextWindowUsageByThread = MutableStateFlow<Map<String, ContextWindowUsage>>(emptyMap())
@@ -363,6 +372,9 @@ class CodexService(
             remapThreadFromServer = { t -> applyPersistedThreadRename(applyAuthoritativeProjectPathToServerThread(t)) },
             persistedThreadRename = { tid -> persistedThreadRename(tid) },
             onRunCompletionAttention = { th, turn, kind -> notifyRunCompletionAttention(th, turn, kind) },
+            onGitStackedActionProgress = { event ->
+                _gitStackedActionProgress.tryEmit(event)
+            },
         )
     }
 
@@ -434,6 +446,11 @@ class CodexService(
 
     override suspend fun setSelectedServiceTier(serviceTier: CodexServiceTier?) =
         setSelectedServiceTierForRepository(serviceTier)
+
+    override suspend fun setThreadCollaborationMode(
+        threadId: String,
+        mode: CodexCollaborationModeKind,
+    ) = setThreadCollaborationModeForRepository(threadId, mode)
 
     override suspend fun resolvePendingApproval(
         requestId: String,
@@ -566,6 +583,15 @@ class CodexService(
         fileMentions: List<CodexTurnMention>,
         collaborationMode: CodexCollaborationModeKind?,
     ) = startTurnForRepository(threadId, text, attachments, skillMentions, fileMentions, collaborationMode)
+
+    override suspend fun steerTurn(
+        threadId: String,
+        expectedTurnId: String,
+        text: String,
+        attachments: List<CodexImageAttachment>,
+        skillMentions: List<CodexTurnSkillMention>,
+        fileMentions: List<CodexTurnMention>,
+    ) = steerTurnForRepository(threadId, expectedTurnId, text, attachments, skillMentions, fileMentions)
 
     override suspend fun startReview(
         threadId: String,

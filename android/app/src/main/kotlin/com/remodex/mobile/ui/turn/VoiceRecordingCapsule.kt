@@ -7,6 +7,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -35,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.R as LucideR
 import com.remodex.mobile.R
+import com.remodex.mobile.ui.theme.RemodexPopupChrome
+import com.remodex.mobile.ui.theme.isAgentLightChrome
 import kotlin.math.max
 import kotlin.math.min
 
@@ -45,12 +48,20 @@ internal fun VoiceRecordingCapsule(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val capsuleShape = RoundedCornerShape(20.dp)
+    val capsuleBorder =
+        if (isAgentLightChrome()) {
+            Modifier.border(RemodexPopupChrome.borderStroke(), capsuleShape)
+        } else {
+            Modifier
+        }
     Surface(
         modifier =
             modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-        shape = RoundedCornerShape(20.dp),
+                .padding(horizontal = 4.dp)
+                .then(capsuleBorder),
+        shape = capsuleShape,
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
         tonalElevation = 2.dp,
         shadowElevation = 1.dp,

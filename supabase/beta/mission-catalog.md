@@ -53,6 +53,17 @@ These have both backend route support and Android app hooks.
 | `scroll-long-thread` | auto-live | `scroll_long_thread_checked` | 25 | Test long-thread scrolling | Open a long conversation, scroll up and down, and verify the composer and timeline stay usable. |
 | `file-change-card` | auto-live | `file_change_card_checked` | 30 | Inspect file-change cards | Run a task that produces a patch and check summary, file labels, and detail expansion. |
 | `command-card` | auto-live | `command_card_checked` | 25 | Inspect command cards | Run a task with terminal output and verify command status, output, and failure states are readable. |
+| `searches` | auto-live | `searches_expanded` | 25 | Inspect Searches UI | Expand the Searches section on an assistant response and verify the source list is readable. |
+| `steering` | auto-live | `turn_steered` | 35 | Try mobile steering | While a turn is running, stage and send a steering message, then report anything confusing in the new controls. |
+| `mobile-pr-draft` | auto-live | `mobile_pr_draft_opened` | 35 | Create mobile PR draft | Use Commit + Push + PR or Create PR and verify PR creation/opening from the phone. |
+| `repo-diff-review` | auto-live | `repo_diff_reviewed` | 30 | Review repository diff | Open the repository diff from the Git header, switch scopes, expand files, and copy a path. |
+| `project-thread` | auto-live | `project_thread_started` | 30 | Create a new project thread | Use the project picker flow to choose workspace/runtime context and create a thread. |
+| `user-bubble` | auto-live | `user_bubble_color_changed` | 15 | Customize user bubble color | Change the user bubble color in Settings and verify the timeline uses it. |
+| `onboarding` | auto-live | `onboarding_completed` | 25 | Complete onboarding setup | Walk through onboarding, copy setup commands if needed, and continue to QR scanning. |
+| `plan-rendering` | auto-live | `plan_rendering_checked` | 25 | Validate plan rendering | Open plan details and verify progress, statuses, and rendered markdown are readable. |
+| `terminal-open` | auto-live | `terminal_opened` | 20 | Open Terminal add-on | Open the Android Terminal add-on from the sidebar and verify the profile list or empty state is understandable. |
+| `terminal-profile` | auto-live | `terminal_profile_saved` | 35 | Save a terminal profile | Create or edit a terminal SSH profile and report confusing labels, key validation, or setup issues. |
+| `terminal-connect` | auto-live | `terminal_connect_started` | 40 | Try terminal SSH connect | Start an SSH connection from a saved terminal profile and report host trust, passphrase, auth, or network issues. |
 
 ## Route-Ready Missions
 

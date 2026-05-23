@@ -3,6 +3,7 @@ package com.remodex.mobile.core.model
 import java.time.Instant
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -28,6 +29,7 @@ data class CodexThread(
     val agentRole: String? = null,
     val model: String? = null,
     val modelProvider: String? = null,
+    val collaborationMode: CodexCollaborationModeKind = CodexCollaborationModeKind.default,
     val syncState: CodexThreadSyncState = CodexThreadSyncState.live,
 ) {
     companion object {
@@ -123,6 +125,7 @@ data class CodexThread(
                     metadata,
                     listOf("modelProvider", "model_provider", "modelProviderId", "model_provider_id"),
                 )
+            val collaborationMode = decodeCollaborationMode(obj, metadata)
             val sync =
                 obj.stringOrNull("syncState")?.let { raw ->
                     runCatching { CodexThreadSyncState.valueOf(raw) }.getOrNull()
@@ -144,6 +147,7 @@ data class CodexThread(
                 agentRole = normalizeIdentifier(agentRoleVal),
                 model = normalizeIdentifier(modelVal),
                 modelProvider = normalizeIdentifier(modelProv),
+                collaborationMode = collaborationMode,
                 syncState = sync,
             )
         }
@@ -207,6 +211,35 @@ data class CodexThread(
                 }
             }
             return null
+        }
+
+        private fun decodeCollaborationMode(
+            obj: JsonObject,
+            metadata: Map<String, JSONValue>?,
+        ): CodexCollaborationModeKind {
+            fun decode(raw: String?): CodexCollaborationModeKind? {
+                val normalized = normalizeIdentifier(raw)?.lowercase()?.replace("-", "_") ?: return null
+                return when (normalized) {
+                    "plan" -> CodexCollaborationModeKind.plan
+                    "default" -> CodexCollaborationModeKind.default
+                    else -> null
+                }
+            }
+
+            for (key in listOf("collaborationMode", "collaboration_mode")) {
+                val rawMode = runCatching { obj[key]?.jsonPrimitive?.content }.getOrNull()
+                decode(rawMode)?.let { return it }
+                val mode =
+                    runCatching { obj[key]?.jsonObject?.get("mode")?.jsonPrimitive?.content }.getOrNull()
+                decode(mode)?.let { return it }
+            }
+            for (key in listOf("collaborationMode", "collaboration_mode")) {
+                metadata?.get(key)?.stringValue?.let { raw -> decode(raw)?.let { return it } }
+                metadata?.get(key)?.objectValue?.get("mode")?.stringValue?.let { raw ->
+                    decode(raw)?.let { return it }
+                }
+            }
+            return CodexCollaborationModeKind.default
         }
 
         private fun parseIso8601(value: String): Instant? =
@@ -283,6 +316,12 @@ data class CodexThread(
             agentRole = agentRole ?: existing.agentRole,
             model = model ?: existing.model,
             modelProvider = modelProvider ?: existing.modelProvider,
+            collaborationMode =
+                if (collaborationMode == CodexCollaborationModeKind.default) {
+                    existing.collaborationMode
+                } else {
+                    collaborationMode
+                },
         )
 
     private val noProjectGroupKey = "__no_project__"

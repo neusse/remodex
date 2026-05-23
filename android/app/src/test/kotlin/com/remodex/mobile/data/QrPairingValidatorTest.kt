@@ -41,6 +41,35 @@ class QrPairingValidatorTest {
     }
 
     @Test
+    fun shortPairingCode_returnsLookupRequest() {
+        val r = validatePairingQrCode("ab23-cd34ef")
+        val shortCode = assertIs<QrPairingValidationResult.ShortCode>(r)
+        assertEquals("AB23CD34EF", shortCode.code)
+    }
+
+    @Test
+    fun pasteablePairingCode_decodesPayload() {
+        val now = 1_700_000_000_000L
+        val expires = now + 3600_000L
+        val json =
+            """
+            {"v":$CODEX_PAIRING_QR_VERSION,"relay":"ws://192.168.1.5:9000","sessionId":"sess",
+            "macDeviceId":"mac","macIdentityPublicKey":"$validMacIdentityPublicKey","expiresAt":$expires}
+            """.trimIndent()
+        val encoded =
+            Base64.getEncoder()
+                .encodeToString(json.toByteArray())
+                .replace("+", "-")
+                .replace("/", "_")
+                .replace("=", "")
+
+        val r = validatePairingQrCode("RMX1:$encoded", nowEpochMillis = now)
+
+        val success = assertIs<QrPairingValidationResult.Success>(r)
+        assertEquals("mac", success.payload.macDeviceId)
+    }
+
+    @Test
     fun tailscaleRelayPayload_succeeds() {
         val now = 1_700_000_000_000L
         val expires = now + 3600_000L
@@ -113,6 +142,41 @@ class QrPairingValidatorTest {
             assertEquals(relayUrl, success.payload.relay)
             val request = server.takeRequest()
             assertEquals("/v1/pairing/code/resolve", request.path)
+        }
+    }
+
+    @Test
+    fun resolvePairingCode_preservesRelayPathPrefix() = runTest {
+        val now = 1_700_000_000_000L
+        val expires = now + 3600_000L
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("content-type", "application/json")
+                    .setBody(
+                        """
+                        {"ok":true,"v":$CODEX_PAIRING_QR_VERSION,"sessionId":"sess",
+                        "macDeviceId":"mac","macIdentityPublicKey":"$validMacIdentityPublicKey","expiresAt":$expires}
+                        """.trimIndent(),
+                    ),
+            )
+
+            server.start()
+            val relayUrl = "ws://127.0.0.1:${server.port}/remodex/relay"
+            val result =
+                resolvePairingCode(
+                    httpClient = OkHttpClient(),
+                    relayUrl = relayUrl,
+                    code = "ab23-cd34ef",
+                    nowEpochMillis = now,
+                )
+
+            if (result is QrPairingValidationResult.ScanError) fail(result.message)
+            val success = assertIs<QrPairingValidationResult.Success>(result)
+            assertEquals(relayUrl, success.payload.relay)
+            val request = server.takeRequest()
+            assertEquals("/remodex/v1/pairing/code/resolve", request.path)
         }
     }
 

@@ -186,8 +186,10 @@ private fun commandExecutionStatus(text: String): String {
             "running checks..."
         Regex("""\b(git\s+status|git\s+diff|diff|status)\b""").containsMatchIn(command) ->
             "checking changes..."
-        Regex("""\b(cat|nl|head|tail|sed|less|more|rg|grep|ag|ack|ls|find|fd|read_file|view_file|search)\b""")
+        Regex("""\b(rg|grep|ag|ack|find|fd|search|workspace_?search|semantic_?search|code_?search|web_?search)\b""")
             .containsMatchIn(command) ->
+            "searching..."
+        Regex("""\b(cat|nl|head|tail|sed|less|more|ls|read_file|view_file)\b""").containsMatchIn(command) ->
             "thinking..."
         else -> "working..."
     }
@@ -294,7 +296,11 @@ private fun List<TimelineListItem>.collapseAssistantWorkGroups(
                 }
             if (hiddenItems.isEmpty()) return@forEach
             hiddenIndexes += hiddenItems.map { it.index }
-            val workMessages = hiddenItems.flatMap { it.messages }
+            val workMessages =
+                hiddenItems
+                    .flatMap { it.messages }
+                    .filter { it.kind != CodexMessageKind.plan }
+            if (workMessages.isEmpty()) return@forEach
             workGroupsByInsertIndex[hiddenItems.first().index] =
                 TimelineListItem.AssistantWorkGroup(
                     groupKey = "assistant-work-${itemsForTurn.first().groupKey}",
@@ -381,7 +387,14 @@ private fun TimelineListItem.timelineMessages(): List<CodexMessage> =
         is TimelineListItem.FileChangeGroup -> messages
     }
 
-private fun TimelineListItem.isAssistantWorkItem(): Boolean =
-    timelineMessages().any { message ->
-        message.role == CodexMessageRole.assistant || message.role == CodexMessageRole.system
+private fun CodexMessage.isCollapsibleAssistantWork(): Boolean =
+    when (kind) {
+        CodexMessageKind.plan -> false
+        CodexMessageKind.thinking -> false
+        else ->
+            role == CodexMessageRole.assistant ||
+                role == CodexMessageRole.system
     }
+
+private fun TimelineListItem.isAssistantWorkItem(): Boolean =
+    timelineMessages().any { it.isCollapsibleAssistantWork() }

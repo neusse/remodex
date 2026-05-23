@@ -24,8 +24,10 @@
         android:theme="@style/Theme.RemodexMobile"
         android:usesCleartextTraffic="true">
 
-        <!-- Optional dev default relay (parity with iOS PHODEX_DEFAULT_RELAY_URL). Leave commented for local-first / QR pairing. -->
-        <!-- <meta-data android:name="PHODEX_DEFAULT_RELAY_URL" android:value="ws://127.0.0.1:3911/" /> -->
+        <!-- Optional default relay (parity with iOS PHODEX_DEFAULT_RELAY_URL). Empty by default for local-first / QR pairing. -->
+        <meta-data
+            android:name="PHODEX_DEFAULT_RELAY_URL"
+            android:value="${PHODEX_DEFAULT_RELAY_URL}" />
 
         <activity
             android:name=".MainActivity"

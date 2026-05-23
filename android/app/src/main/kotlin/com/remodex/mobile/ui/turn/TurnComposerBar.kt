@@ -53,6 +53,7 @@ import com.remodex.mobile.R
 import com.remodex.mobile.ui.theme.AgentLightColors
 import com.remodex.mobile.ui.theme.RemodexComposerCapsuleChrome
 import com.remodex.mobile.ui.theme.RemodexDropdownMenu
+import com.remodex.mobile.ui.theme.RemodexPopupChrome
 import com.remodex.mobile.ui.theme.isAgentLightChrome
 import com.valentinilk.shimmer.shimmer
 
@@ -141,11 +142,7 @@ internal fun TurnComposerBar(
                 }
             val autoModifier =
                 if (agentLightChrome) {
-                    Modifier.border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outline,
-                        shape = autoShape,
-                    )
+                    Modifier.border(RemodexPopupChrome.borderStroke(), autoShape)
                 } else {
                     Modifier
                 }
@@ -229,6 +226,7 @@ internal fun TurnComposerBar(
                 onCancel = onCancelVoiceRecording,
             )
         }
+        composerEnvironment()
         RemodexComposerCapsuleChrome(
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -403,6 +401,12 @@ internal fun TurnComposerBar(
                         modifier = Modifier.size(33.dp),
                         contentAlignment = Alignment.Center,
                     ) {
+                        val circleChrome =
+                            if (agentLightChrome) {
+                                Modifier.border(RemodexPopupChrome.borderStroke(), CircleShape)
+                            } else {
+                                Modifier
+                            }
                         if (actions.stopButtonVisible) {
                             val stopCd = stringResource(R.string.turn_stop)
                             Box(
@@ -410,6 +414,7 @@ internal fun TurnComposerBar(
                                     Modifier
                                         .size(33.dp)
                                         .clip(CircleShape)
+                                        .then(circleChrome)
                                         .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
                                         .clickable(
                                             enabled = actions.stopButtonEnabled,
@@ -450,6 +455,7 @@ internal fun TurnComposerBar(
                                     Modifier
                                         .size(33.dp)
                                         .clip(CircleShape)
+                                        .then(circleChrome)
                                         .background(sendBg)
                                         .clickable(
                                             enabled = actions.sendButtonEnabled,
@@ -470,7 +476,6 @@ internal fun TurnComposerBar(
                 }
             }
         }
-        composerEnvironment()
     }
 }
 
@@ -527,11 +532,18 @@ private fun ComposerPlanModeBadge(
         }
     val label = stringResource(R.string.turn_plan_mode_chip)
 
+    val planBorder =
+        if (lightChrome) {
+            Modifier.border(RemodexPopupChrome.borderStroke(), shape)
+        } else {
+            Modifier
+        }
     Box(
         modifier =
             Modifier
                 .shimmer()
                 .clip(shape)
+                .then(planBorder)
                 .background(
                     Brush.horizontalGradient(
                         listOf(

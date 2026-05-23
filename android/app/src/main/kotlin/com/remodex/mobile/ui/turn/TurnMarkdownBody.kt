@@ -61,6 +61,7 @@ fun TurnMarkdownBody(
     contentColor: Color,
     modifier: Modifier = Modifier,
     keyPrefix: String = TurnTimelineCacheKey.textKey("markdown-body", markdown),
+    linkColor: Color = contentColor,
 ) {
     val displayMarkdown = TurnMarkdownRenderCache.visibleProse(markdown)
     val clipboard = LocalClipboard.current
@@ -133,6 +134,7 @@ fun TurnMarkdownBody(
                                             style =
                                                 bodyStyle
                                                     .copy(
+                                                        color = linkColor,
                                                         fontWeight = FontWeight.SemiBold,
                                                         textDecoration = TextDecoration.Underline,
                                                     )

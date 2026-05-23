@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -58,6 +59,38 @@ class IncomingEventRouterDesktopMirrorTest {
             )
 
             assertEquals(listOf<Pair<String, String?>>("thread-1" to "turn-1"), lifecycle)
+        }
+
+    @Test
+    fun desktopUserMessageWithTimestamp_ordersBeforeLaterAssistantWhenTurnIdMissing() =
+        runTest {
+            val timeline = MessageTimelineStore()
+            val router = newRouter(messageTimeline = timeline)
+
+            timeline.completeAssistantMessage(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                itemId = "assistant-1",
+                text = "Final answer",
+            )
+
+            router.dispatchNotification(
+                method = "codex/event/user_message",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "threadId" to JSONValue.Str("thread-1"),
+                            "message" to JSONValue.Str("Prompt from PC"),
+                            "timestamp" to JSONValue.Str("1970-01-01T00:00:00Z"),
+                        ),
+                    ),
+            )
+            advanceUntilIdle()
+
+            val messages = timeline.messagesByThread.value["thread-1"].orEmpty()
+            assertEquals(listOf(CodexMessageRole.user, CodexMessageRole.assistant), messages.map { it.role })
+            assertEquals("Prompt from PC", messages[0].text)
+            assertEquals("Final answer", messages[1].text)
         }
 
     @Test
@@ -308,9 +341,153 @@ class IncomingEventRouterDesktopMirrorTest {
             assertEquals(listOf<Pair<String, String?>>("thread-1" to "turn-1"), lifecycle)
         }
 
+    @Test
+    fun planUpdateObjectShape_rendersThroughPlanMessage() =
+        runTest {
+            val timeline = MessageTimelineStore()
+            val router = newRouter(messageTimeline = timeline)
+
+            router.dispatchNotification(
+                method = "turn/plan/updated",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "threadId" to JSONValue.Str("thread-1"),
+                            "turnId" to JSONValue.Str("turn-1"),
+                            "plan" to
+                                JSONValue.Obj(
+                                    mapOf(
+                                        "explanation" to JSONValue.Str("Use the dedicated plan UI"),
+                                        "steps" to
+                                            JSONValue.Arr(
+                                                listOf(
+                                                    JSONValue.Obj(
+                                                        mapOf(
+                                                            "text" to JSONValue.Str("Render card"),
+                                                            "status" to JSONValue.Str("running"),
+                                                        ),
+                                                    ),
+                                                ),
+                                            ),
+                                    ),
+                                ),
+                        ),
+                    ),
+            )
+
+            val plan = timeline.messagesByThread.value["thread-1"].orEmpty().single()
+            assertEquals(CodexMessageKind.plan, plan.kind)
+            assertEquals("Use the dedicated plan UI", plan.planState?.explanation)
+            assertEquals("Render card", plan.planState?.steps?.single()?.step)
+            assertEquals(CodexPlanStepStatus.inProgress, plan.planState?.steps?.single()?.status)
+        }
+
+    @Test
+    fun proposedPlanStructuredInput_isAddedAsPlanMessage() =
+        runTest {
+            val timeline = MessageTimelineStore()
+            val pending = kotlinx.coroutines.CompletableDeferred<PendingStructuredInputRequest>()
+            val router =
+                newRouter(
+                    messageTimeline = timeline,
+                    onStructuredInputRequest = { request, _ -> pending.complete(request) },
+                )
+
+            router.dispatchServerRequest(
+                method = "request_user_input",
+                requestId = JSONValue.Str("proposed-plan-1"),
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "threadId" to JSONValue.Str("thread-1"),
+                            "turnId" to JSONValue.Str("turn-1"),
+                            "questions" to
+                                JSONValue.Arr(
+                                    listOf(
+                                        JSONValue.Obj(
+                                            mapOf(
+                                                "id" to JSONValue.Str("approval"),
+                                                "header" to JSONValue.Str("Proposed plan"),
+                                                "question" to JSONValue.Str("1. Inspect\n2. Patch\n3. Verify"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                        ),
+                ),
+                respond = {},
+            )
+            pending.await()
+            advanceUntilIdle()
+
+            val plan = timeline.messagesByThread.value["thread-1"].orEmpty().single()
+            assertEquals(CodexMessageKind.plan, plan.kind)
+            assertEquals("1. Inspect\n2. Patch\n3. Verify", plan.text)
+            assertEquals("\"proposed-plan-1\"", plan.itemId)
+        }
+
+    @Test
+    fun desktopFinalAgentMessageWithoutTurnCompleted_clearsRunningFallback() =
+        runTest {
+            val finished = mutableListOf<String>()
+            val router = newRouter(onTurnFinished = { threadId -> finished += threadId })
+
+            router.dispatchNotification(
+                method = "codex/event/user_message",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "threadId" to JSONValue.Str("thread-1"),
+                            "message" to JSONValue.Str("Prompt from PC"),
+                        ),
+                    ),
+            )
+            router.dispatchNotification(
+                method = "codex/event/agent_message",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "threadId" to JSONValue.Str("thread-1"),
+                            "message" to JSONValue.Str("Final answer"),
+                        ),
+                    ),
+            )
+
+            assertEquals(listOf("thread-1"), finished)
+        }
+
+    @Test
+    fun codexEventTaskCompleteEnvelope_clearsRunningTurn() =
+        runTest {
+            val finished = mutableListOf<String>()
+            val router = newRouter(onTurnFinished = { threadId -> finished += threadId })
+
+            router.dispatchNotification(
+                method = "codex/event",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "msg" to
+                                JSONValue.Obj(
+                                    mapOf(
+                                        "type" to JSONValue.Str("task_complete"),
+                                        "threadId" to JSONValue.Str("thread-1"),
+                                        "turn_id" to JSONValue.Str("turn-1"),
+                                    ),
+                                ),
+                        ),
+                    ),
+            )
+
+            assertEquals(listOf("thread-1"), finished)
+        }
+
     private fun newRouter(
         messageTimeline: MessageTimelineStore = MessageTimelineStore(),
         onTurnLifecycle: (threadId: String, turnId: String?) -> Unit = { _, _ -> },
+        onTurnFinished: (threadId: String) -> Unit = {},
+        onStructuredInputRequest: (PendingStructuredInputRequest, (Map<String, List<String>>) -> Unit) -> Unit =
+            { _: PendingStructuredInputRequest, _: (Map<String, List<String>>) -> Unit -> },
     ): IncomingEventRouter =
         IncomingEventRouter(
             scope = CoroutineScope(UnconfinedTestDispatcher()),
@@ -321,10 +498,10 @@ class IncomingEventRouterDesktopMirrorTest {
             onRequestThreadSync = {},
             onHydrateThread = {},
             onTurnLifecycle = onTurnLifecycle,
-            onTurnFinished = {},
+            onTurnFinished = onTurnFinished,
             isTurnStreamingActive = { _, _ -> true },
             shouldAutoApproveRequests = { false },
             onApprovalRequest = { _: PendingApprovalRequest, _: (PendingApprovalDecision) -> Unit -> },
-            onStructuredInputRequest = { _: PendingStructuredInputRequest, _: (Map<String, List<String>>) -> Unit -> },
+            onStructuredInputRequest = onStructuredInputRequest,
         )
 }

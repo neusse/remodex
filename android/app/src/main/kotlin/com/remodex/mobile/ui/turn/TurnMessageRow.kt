@@ -3,6 +3,7 @@ package com.remodex.mobile.ui.turn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -15,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -23,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.valentinilk.shimmer.shimmer
+import com.remodex.mobile.AppContainer
 import com.remodex.mobile.R
 import com.remodex.mobile.core.model.CodexMessage
 import com.remodex.mobile.core.model.CodexMessageDeliveryState
@@ -30,11 +33,17 @@ import com.remodex.mobile.core.model.CodexMessageKind
 import com.remodex.mobile.core.model.CodexMessageRole
 import com.remodex.mobile.core.model.CommandExecutionDetails
 import com.remodex.mobile.core.model.TurnThinkingDisclosureHints
+import com.remodex.mobile.core.model.UserBubbleColor
+import com.remodex.mobile.ui.LocalUserBubbleColor
 import com.remodex.mobile.ui.agent.FileEditRow
 import com.remodex.mobile.ui.agent.ToolCallRow
+import com.remodex.mobile.ui.theme.bubbleBackground
+import com.remodex.mobile.ui.theme.bubbleForeground
 import com.remodex.mobile.ui.theme.isAgentLightChrome
+import com.remodex.mobile.ui.theme.mentionForeground
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /**
  * Timeline turn row: chat + dedicated layouts per [CodexMessageKind] (J.4/J.6).
@@ -46,7 +55,10 @@ fun TurnMessageRow(
     commandExecutionDetails: CommandExecutionDetails? = null,
     onOpenFullMessage: ((CodexMessage) -> Unit)? = null,
     onOpenPlanDetails: ((CodexMessage) -> Unit)? = null,
+    onApplyPlan: ((CodexMessage) -> Unit)? = null,
+    canApplyPlan: Boolean = true,
 ) {
+    val missionScope = rememberCoroutineScope()
     val isTimelineToolRow =
         message.role == CodexMessageRole.system &&
             (message.kind == CodexMessageKind.commandExecution ||
@@ -64,14 +76,10 @@ fun TurnMessageRow(
         }
     val colors = MaterialTheme.colorScheme
     val isLightChrome = isAgentLightChrome()
+    val userBubbleColor = LocalUserBubbleColor.current
     val bubbleColor =
         when (message.role) {
-            CodexMessageRole.user ->
-                if (isLightChrome) {
-                    colors.surfaceVariant.copy(alpha = 1f)
-                } else {
-                    colors.surfaceVariant.copy(alpha = 0.55f)
-                }
+            CodexMessageRole.user -> userBubbleColor.bubbleBackground(colors, isLightChrome)
             CodexMessageRole.assistant -> colors.surface.copy(alpha = 0.0f)
             CodexMessageRole.system ->
                 when (message.kind) {
@@ -89,15 +97,21 @@ fun TurnMessageRow(
         }
     val onBubble =
         when (message.role) {
-            CodexMessageRole.user -> colors.onSurface
+            CodexMessageRole.user -> userBubbleColor.bubbleForeground(colors, isLightChrome)
             CodexMessageRole.assistant -> colors.onBackground
             CodexMessageRole.system -> colors.onSurfaceVariant
         }
     val bubbleBorder =
-        if (message.role == CodexMessageRole.user && isLightChrome) {
+        if (message.role == CodexMessageRole.user && isLightChrome && userBubbleColor == UserBubbleColor.default) {
             BorderStroke(0.5.dp, colors.outline.copy(alpha = 0.58f))
         } else {
             null
+        }
+    val markdownLinkColor =
+        if (message.role == CodexMessageRole.user) {
+            userBubbleColor.mentionForeground(colors, isLightChrome, onBubble)
+        } else {
+            onBubble
         }
 
     Column(
@@ -163,6 +177,20 @@ fun TurnMessageRow(
                         cleanedDirectiveText = directiveOutcome.cleanedText,
                         hasDirectiveFindings = directiveOutcome.hasFindings,
                     )
+                val proposedPlanExtraction =
+                    remember(message.id, message.role, message.kind, bodyMarkdown) {
+                        if (message.role == CodexMessageRole.assistant && message.kind == CodexMessageKind.chat) {
+                            ProposedPlanBlockParser.extract(bodyMarkdown)
+                        } else {
+                            ProposedPlanExtraction(visibleMarkdown = bodyMarkdown, plans = emptyList())
+                        }
+                    }
+                val renderedBodyMarkdown =
+                    if (proposedPlanExtraction.plans.isNotEmpty()) {
+                        proposedPlanExtraction.visibleMarkdown
+                    } else {
+                        bodyMarkdown
+                    }
                 val isStreamingAssistantChat =
                     message.role == CodexMessageRole.assistant &&
                         message.kind == CodexMessageKind.chat &&
@@ -170,7 +198,7 @@ fun TurnMessageRow(
                 val revealedBodyMarkdown =
                     rememberStreamingAssistantMarkdown(
                         messageId = message.id,
-                        markdown = bodyMarkdown,
+                        markdown = renderedBodyMarkdown,
                         isStreaming = isStreamingAssistantChat,
                     )
                 val displayedBodyMarkdown = revealedBodyMarkdown
@@ -225,6 +253,8 @@ fun TurnMessageRow(
                             message = message,
                             contentColor = onBubble,
                             onSeeMore = onOpenPlanDetails?.let { open -> { open(message) } },
+                            onApplyPlan = onApplyPlan?.let { apply -> { apply(message) } },
+                            canApplyPlan = canApplyPlan,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -236,6 +266,7 @@ fun TurnMessageRow(
                                     contentColor = onBubble,
                                     modifier = streamingModifier,
                                     keyPrefix = message.id,
+                                    linkColor = markdownLinkColor,
                                 )
                             } else {
                                 Text(
@@ -255,6 +286,42 @@ fun TurnMessageRow(
                                     Text(stringResource(R.string.turn_message_see_more))
                                 }
                             }
+                        }
+                        proposedPlanExtraction.plans.forEachIndexed { index, plan ->
+                            val planMessage =
+                                remember(message.id, message.threadId, message.createdAt, plan.markdown, index) {
+                                    message.copy(
+                                        id = "${message.id}-proposed-plan-$index",
+                                        role = CodexMessageRole.system,
+                                        kind = CodexMessageKind.plan,
+                                        text = plan.markdown,
+                                        isStreaming = false,
+                                        planState = null,
+                                    )
+                                }
+                            PlanMarkdownPreview(
+                                message = planMessage,
+                                contentColor = onBubble,
+                                onSeeMore = onOpenPlanDetails?.let { open -> { open(planMessage) } },
+                                onApplyPlan = onApplyPlan?.let { apply -> { apply(planMessage) } },
+                                canApplyPlan = canApplyPlan,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        if (message.role == CodexMessageRole.assistant && message.kind == CodexMessageKind.chat) {
+                            TurnSearchCitationAccessory(
+                                markdown = bodyMarkdown,
+                                isStreaming = message.isStreaming,
+                                modifier = Modifier.fillMaxWidth(),
+                                onExpand = {
+                                    missionScope.launch {
+                                        AppContainer.betaEngagementRepository.recordMissionEvent(
+                                            eventType = "searches_expanded",
+                                            screen = "conversation",
+                                        )
+                                    }
+                                },
+                            )
                         }
                     }
                 }
@@ -359,7 +426,7 @@ private const val USER_MESSAGE_INLINE_MAX_CHARS = 1_200
 private const val USER_MESSAGE_INLINE_MAX_LINES = 12
 private const val ASSISTANT_MESSAGE_INLINE_MAX_LINES = 18
 private const val PLAN_MESSAGE_INLINE_MAX_CHARS = 720
-private const val PLAN_MESSAGE_INLINE_MAX_LINES = 8
+private const val PLAN_MESSAGE_INLINE_MAX_LINES = 5
 
 private data class CappedTimelineBody(
     val text: String,
@@ -407,6 +474,8 @@ private fun PlanMarkdownPreview(
     message: CodexMessage,
     contentColor: androidx.compose.ui.graphics.Color,
     onSeeMore: (() -> Unit)?,
+    onApplyPlan: (() -> Unit)? = null,
+    canApplyPlan: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val lightChrome = isAgentLightChrome()
@@ -444,12 +513,30 @@ private fun PlanMarkdownPreview(
                 modifier = Modifier.fillMaxWidth(),
                 keyPrefix = "${message.id}-plan-preview",
             )
-            if ((preview.truncated || message.planState?.steps.orEmpty().size > 0) && onSeeMore != null) {
-                TextButton(onClick = onSeeMore) {
-                    Text(
-                        text = stringResource(R.string.turn_message_see_more),
-                        color = accent,
-                    )
+            if (onSeeMore != null || onApplyPlan != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    if ((preview.truncated || message.planState?.steps.orEmpty().size > 0) && onSeeMore != null) {
+                        TextButton(onClick = onSeeMore) {
+                            Text(
+                                text = stringResource(R.string.turn_message_see_more),
+                                color = accent,
+                            )
+                        }
+                    }
+                    if (onApplyPlan != null) {
+                        TextButton(
+                            onClick = onApplyPlan,
+                            enabled = canApplyPlan,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.turn_plan_apply_action),
+                                color = accent,
+                            )
+                        }
+                    }
                 }
             }
         }

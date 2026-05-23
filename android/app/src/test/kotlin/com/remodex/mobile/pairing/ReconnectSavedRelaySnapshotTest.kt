@@ -9,6 +9,8 @@ import com.remodex.mobile.core.model.CodexModelOption
 import com.remodex.mobile.core.model.CodexRateLimitBucket
 import com.remodex.mobile.core.model.CodexServiceTier
 import com.remodex.mobile.core.model.CodexThread
+import com.remodex.mobile.core.model.CodexTurnMention
+import com.remodex.mobile.core.model.CodexTurnSkillMention
 import com.remodex.mobile.core.model.ContextWindowUsage
 import com.remodex.mobile.core.model.JSONValue
 import com.remodex.mobile.core.model.PendingApprovalDecision
@@ -39,7 +41,7 @@ class ReconnectSavedRelaySnapshotTest {
         }
 
     @Test
-    fun reconnect_disconnectsThenConnectsWithBuiltUrl() =
+    fun reconnect_connectsWithBuiltUrlWithoutClearingPresentationStateFirst() =
         runTest {
             val repo = ReconnectTrackingRepository()
             val snap =
@@ -48,7 +50,7 @@ class ReconnectSavedRelaySnapshotTest {
                     relayUrl = "wss://relay.example/path",
                 )
             reconnectUsingSavedRelaySnapshot(repo, snap)
-            assertEquals(1, repo.disconnectCalls)
+            assertEquals(0, repo.disconnectCalls)
             assertEquals("wss://relay.example/path/sess-1", repo.lastConnectUrl)
             assertEquals("sess-1", repo.lastConnectToken)
         }
@@ -164,6 +166,14 @@ private class ReconnectTrackingRepository : CodexRepository {
         skillMentions: List<com.remodex.mobile.core.model.CodexTurnSkillMention>,
         fileMentions: List<com.remodex.mobile.core.model.CodexTurnMention>,
         collaborationMode: CodexCollaborationModeKind?,
+    ) = error("unused")
+    override suspend fun steerTurn(
+        threadId: String,
+        expectedTurnId: String,
+        text: String,
+        attachments: List<CodexImageAttachment>,
+        skillMentions: List<CodexTurnSkillMention>,
+        fileMentions: List<CodexTurnMention>,
     ) = error("unused")
 
     override suspend fun interruptTurn(

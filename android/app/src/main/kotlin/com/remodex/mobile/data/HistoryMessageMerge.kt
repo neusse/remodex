@@ -20,13 +20,12 @@ internal object HistoryMessageMerge {
         if (incoming.isEmpty()) return existing
         if (existing.isEmpty()) {
             return incoming
-                .sortedBy { it.createdAt }
                 .dedupeCompatibleUserChats()
         }
         val merged = existing.toMutableList()
         val keys = merged.map { historyKey(it) }.toMutableSet()
         val additions = ArrayList<CodexMessage>()
-        for (m in incoming.sortedBy { it.createdAt }) {
+        for (m in incoming) {
             if (m.role == CodexMessageRole.system &&
                 m.kind == CodexMessageKind.thinking &&
                 !m.turnId.isNullOrBlank()
@@ -103,6 +102,24 @@ internal object HistoryMessageMerge {
                 }
             }
 
+            if (m.role == CodexMessageRole.assistant &&
+                m.kind == CodexMessageKind.chat &&
+                !m.turnId.isNullOrBlank()
+            ) {
+                val assistantIndex =
+                    merged.indexOfLast { existingMessage ->
+                        isCompatibleAssistantChatDuplicate(existingMessage, m)
+                    }
+                if (assistantIndex >= 0) {
+                    val current = merged[assistantIndex]
+                    keys.remove(historyKey(current))
+                    val next = mergeAssistantChatDuplicate(current, m)
+                    merged[assistantIndex] = next
+                    keys.add(historyKey(next))
+                    continue
+                }
+            }
+
             val duplicateFileChangeIndex = merged.indexOfLast { existingMessage ->
                 isCompatibleFileChangeDuplicate(existingMessage, m)
             }
@@ -133,10 +150,95 @@ internal object HistoryMessageMerge {
                 additions.add(m)
             }
         }
-        val deduped = (merged + additions).dedupeCompatibleUserChats()
-        if (additions.isEmpty() && deduped == existing) return existing
-        return mergeLateAdditionsIntoTurnPositions(merged, additions)
-            .dedupeCompatibleUserChats()
+        val mergedTimeline =
+            applyIncomingTurnOrder(
+                messages = mergeLateAdditionsIntoTurnPositions(merged, additions),
+                incoming = incoming,
+            ).dedupeCompatibleUserChats()
+        if (additions.isEmpty() && mergedTimeline == existing) return existing
+        return mergedTimeline
+    }
+
+    private fun applyIncomingTurnOrder(
+        messages: List<CodexMessage>,
+        incoming: List<CodexMessage>,
+    ): List<CodexMessage> {
+        val incomingByTurn =
+            incoming
+                .mapNotNull { message ->
+                    message.turnId?.trim()?.takeIf { it.isNotEmpty() }?.let { it to message }
+                }
+                .groupBy({ it.first }, { it.second })
+        if (incomingByTurn.isEmpty()) return messages
+
+        var out = messages
+        for ((turnId, turnHistory) in incomingByTurn) {
+            val indexed = out.withIndex().filter { it.value.turnId == turnId }
+            if (indexed.size < 2) continue
+            val firstIndex = indexed.first().index
+            val ranked =
+                indexed.map { entry ->
+                    RankedTurnMessage(
+                        message = entry.value,
+                        rank = turnHistoryRank(entry.value, turnHistory),
+                    )
+                }
+            val reorderable = ranked.filter { it.rank != Int.MAX_VALUE }
+            if (reorderable.size < 2) continue
+
+            val orderedMatches =
+                reorderable
+                    .sortedWith(
+                        compareBy<RankedTurnMessage> { it.rank },
+                    )
+                    .map { it.message }
+                    .iterator()
+            val orderedTurn =
+                ranked.map { rankedMessage ->
+                    if (rankedMessage.rank == Int.MAX_VALUE) {
+                        rankedMessage.message
+                    } else {
+                        orderedMatches.next()
+                    }
+                }
+            val rebuilt = out.filterNot { it.turnId == turnId }.toMutableList()
+            val insertionIndex = firstIndex.coerceAtMost(rebuilt.size)
+            rebuilt.addAll(insertionIndex, orderedTurn)
+            out = rebuilt
+        }
+        return out
+    }
+
+    private data class RankedTurnMessage(
+        val message: CodexMessage,
+        val rank: Int,
+    )
+
+    private fun turnHistoryRank(
+        message: CodexMessage,
+        turnHistory: List<CodexMessage>,
+    ): Int =
+        turnHistory.indexOfFirst { history -> isSameHistoryItem(message, history) }
+            .takeIf { it >= 0 }
+            ?: Int.MAX_VALUE
+
+    private fun isSameHistoryItem(
+        existing: CodexMessage,
+        incoming: CodexMessage,
+    ): Boolean {
+        if (existing.role != incoming.role || existing.kind != incoming.kind) return false
+        val existingItem = existing.itemId?.trim()?.takeIf { it.isNotEmpty() }
+        val incomingItem = incoming.itemId?.trim()?.takeIf { it.isNotEmpty() }
+        if (existingItem != null && incomingItem != null) return existingItem == incomingItem
+        if (existing.role == CodexMessageRole.user && existing.kind == CodexMessageKind.chat) {
+            return isCompatibleUserChatDuplicate(existing, incoming)
+        }
+        if (existing.role == CodexMessageRole.system && existing.kind == CodexMessageKind.commandExecution) {
+            val existingCommand = normalizedCommandExecutionPreviewKey(existing.text)
+            val incomingCommand = normalizedCommandExecutionPreviewKey(incoming.text)
+            if (existingCommand != null && existingCommand == incomingCommand) return true
+        }
+        return normalizedMessageText(existing.text) == normalizedMessageText(incoming.text)
     }
 
     private fun mergeLateAdditionsIntoTurnPositions(
@@ -222,6 +324,45 @@ internal object HistoryMessageMerge {
             deliveryState = CodexMessageDeliveryState.confirmed,
             attachments =
                 UserChatAttachmentMatcher.merge(existing.attachments, incoming.attachments),
+        )
+
+    private fun isCompatibleAssistantChatDuplicate(
+        existing: CodexMessage,
+        incoming: CodexMessage,
+    ): Boolean {
+        if (existing.role != CodexMessageRole.assistant || incoming.role != CodexMessageRole.assistant) return false
+        if (existing.kind != CodexMessageKind.chat || incoming.kind != CodexMessageKind.chat) return false
+        if (!compatibleTurnIds(existing.turnId, incoming.turnId)) return false
+
+        val existingItem = existing.itemId?.trim()?.takeIf { it.isNotEmpty() }
+        val incomingItem = incoming.itemId?.trim()?.takeIf { it.isNotEmpty() }
+        if (existingItem != null && incomingItem != null && existingItem == incomingItem) return true
+
+        val existingText = normalizedMessageText(existing.text)
+        val incomingText = normalizedMessageText(incoming.text)
+        if (existingText.isEmpty() || incomingText.isEmpty()) return existing.isStreaming || incoming.isStreaming
+        if (existingText == incomingText) return true
+        return (existing.isStreaming || incoming.isStreaming) &&
+            (incomingText.startsWith(existingText) || existingText.startsWith(incomingText))
+    }
+
+    private fun mergeAssistantChatDuplicate(
+        existing: CodexMessage,
+        incoming: CodexMessage,
+    ): CodexMessage =
+        existing.copy(
+            text = mergeSnapshot(existing.text, incoming.text),
+            assistantPhase = incoming.assistantPhase ?: existing.assistantPhase,
+            turnId = incoming.turnId ?: existing.turnId,
+            itemId = incoming.itemId ?: existing.itemId,
+            isStreaming = existing.isStreaming || incoming.isStreaming,
+            deliveryState = CodexMessageDeliveryState.confirmed,
+            attachments =
+                if (incoming.attachments.isNotEmpty()) {
+                    incoming.attachments
+                } else {
+                    existing.attachments
+                },
         )
 
     private fun mergeSystemItemDuplicate(

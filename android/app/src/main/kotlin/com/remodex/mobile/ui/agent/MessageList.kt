@@ -2,6 +2,7 @@ package com.remodex.mobile.ui.agent
 
 import android.content.ClipData
 import androidx.compose.material.icons.automirrored.outlined.Undo
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,6 +50,7 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.valentinilk.shimmer.shimmer
@@ -62,8 +65,10 @@ import com.remodex.mobile.ui.turn.TurnMessageRow
 import com.remodex.mobile.ui.turn.TurnTimelineGroupedRunsRow
 import kotlinx.coroutines.launch
 
-private val MessageListTopFadeStart = 108.dp
-private val MessageListTopFadeLength = 76.dp
+private val MessageListTopFadeStart = 84.dp
+private val MessageListTopFadeLength = 58.dp
+private val MessageListBottomFadeStart = 128.dp
+private val MessageListBottomFadeLength = 96.dp
 
 /**
  * Scrollable conversation timeline. SwiftUI: `ScrollView` + `LazyVStack` pattern.
@@ -81,34 +86,55 @@ fun MessageList(
     commandExecutionDetailsByItemId: Map<String, CommandExecutionDetails> = emptyMap(),
     onOpenFullMessage: ((CodexMessage) -> Unit)? = null,
     onOpenPlanDetails: ((CodexMessage) -> Unit)? = null,
+    onApplyPlan: ((CodexMessage) -> Unit)? = null,
+    canApplyPlan: Boolean = true,
     isAssistantTurnActive: Boolean = false,
     activeTurnId: String? = null,
     verticalItemSpacing: Dp = 10.dp,
     contentPadding: PaddingValues =
         PaddingValues(top = 10.dp, bottom = 18.dp, start = 2.dp, end = 2.dp),
     emptyContent: @Composable BoxScope.() -> Unit = {
-        Text(
-            text = stringResource(R.string.turn_timeline_empty),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Column(
             modifier =
                 Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(horizontal = 8.dp, vertical = 24.dp),
-        )
+                    .align(Alignment.Center)
+                    .padding(horizontal = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Image(
+                painter = painterResource(R.drawable.remodex_icon),
+                contentDescription = null,
+                modifier = Modifier.size(52.dp),
+            )
+            Text(
+                text = stringResource(R.string.turn_timeline_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
     },
     messageContent: @Composable (CodexMessage) -> Unit = { msg ->
         when (msg.role) {
             CodexMessageRole.user ->
                 UserMessageBubble(message = msg, onOpenFullMessage = onOpenFullMessage)
             CodexMessageRole.assistant ->
-                AssistantMessageBlock(message = msg, onOpenFullMessage = onOpenFullMessage)
+                AssistantMessageBlock(
+                    message = msg,
+                    onOpenFullMessage = onOpenFullMessage,
+                    onOpenPlanDetails = onOpenPlanDetails,
+                    onApplyPlan = onApplyPlan,
+                    canApplyPlan = canApplyPlan,
+                )
             CodexMessageRole.system ->
                 TurnMessageRow(
                     message = msg,
                     commandExecutionDetails = msg.itemId?.let { commandExecutionDetailsByItemId[it] },
                     onOpenFullMessage = onOpenFullMessage,
                     onOpenPlanDetails = onOpenPlanDetails,
+                    onApplyPlan = onApplyPlan,
+                    canApplyPlan = canApplyPlan,
                 )
         }
     },
@@ -186,9 +212,11 @@ fun MessageList(
                     Modifier
                         .fillMaxSize()
                         .nestedScroll(scrollPacingConnection)
-                        .topContentFadeMask(
+                        .verticalContentFadeMask(
                             fadeStart = MessageListTopFadeStart,
                             fadeLength = MessageListTopFadeLength,
+                            bottomFadeStart = MessageListBottomFadeStart,
+                            bottomFadeLength = MessageListBottomFadeLength,
                         ),
                 verticalArrangement = Arrangement.spacedBy(verticalItemSpacing),
                 contentPadding = contentPadding,
@@ -341,9 +369,11 @@ fun MessageList(
     }
 }
 
-private fun Modifier.topContentFadeMask(
+private fun Modifier.verticalContentFadeMask(
     fadeStart: Dp,
     fadeLength: Dp,
+    bottomFadeStart: Dp,
+    bottomFadeLength: Dp,
 ): Modifier =
     this
         .graphicsLayer {
@@ -360,6 +390,14 @@ private fun Modifier.topContentFadeMask(
                     .coerceAtMost(height)
             val fadeStartStop = (fadeStartPx / size.height).coerceIn(0f, 1f)
             val fadeEndStop = (fadeEndPx / size.height).coerceIn(0f, 1f)
+            val bottomFadeEndPx =
+                (height - bottomFadeStart.toPx().coerceAtLeast(0f))
+                    .coerceIn(0f, height)
+            val bottomFadeStartPx =
+                (bottomFadeEndPx - bottomFadeLength.toPx().coerceAtLeast(1f))
+                    .coerceIn(0f, bottomFadeEndPx)
+            val bottomFadeStartStop = (bottomFadeStartPx / size.height).coerceIn(0f, 1f)
+            val bottomFadeEndStop = (bottomFadeEndPx / size.height).coerceIn(0f, 1f)
             drawRect(
                 brush =
                     Brush.verticalGradient(
@@ -368,7 +406,9 @@ private fun Modifier.topContentFadeMask(
                                 0f to Color.Transparent,
                                 fadeStartStop to Color.Transparent,
                                 fadeEndStop to Color.Black,
-                                1f to Color.Black,
+                                bottomFadeStartStop to Color.Black,
+                                bottomFadeEndStop to Color.Transparent,
+                                1f to Color.Transparent,
                             ),
                         startY = 0f,
                         endY = size.height,

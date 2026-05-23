@@ -9,6 +9,8 @@ import com.remodex.mobile.core.model.CodexMessage
 import com.remodex.mobile.core.model.CodexModelOption
 import com.remodex.mobile.core.model.CodexServiceTier
 import com.remodex.mobile.core.model.CodexThread
+import com.remodex.mobile.core.model.CodexTurnMention
+import com.remodex.mobile.core.model.CodexTurnSkillMention
 import com.remodex.mobile.core.model.ContextWindowUsage
 import com.remodex.mobile.core.model.JSONValue
 import com.remodex.mobile.core.model.PendingApprovalDecision
@@ -417,6 +419,14 @@ private class WorktreeRecordingRepository(
         skillMentions: List<com.remodex.mobile.core.model.CodexTurnSkillMention>,
         fileMentions: List<com.remodex.mobile.core.model.CodexTurnMention>,
         collaborationMode: CodexCollaborationModeKind?,
+    ) = error("unused")
+    override suspend fun steerTurn(
+        threadId: String,
+        expectedTurnId: String,
+        text: String,
+        attachments: List<CodexImageAttachment>,
+        skillMentions: List<CodexTurnSkillMention>,
+        fileMentions: List<CodexTurnMention>,
     ) = error("unused")
     override suspend fun interruptTurn(threadId: String, turnId: String?) = error("unused")
     override suspend fun sendNotification(method: String, params: JSONValue?) = error("unused")

@@ -2,28 +2,23 @@ package com.remodex.mobile.ui.agent
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.annotation.DrawableRes
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -34,15 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -60,6 +49,8 @@ import com.remodex.mobile.core.model.TurnGitActionKind
 import com.remodex.mobile.ui.theme.AgentLightColors
 import com.remodex.mobile.ui.theme.RemodexGitAddition
 import com.remodex.mobile.ui.theme.RemodexDropdownMenu
+import com.remodex.mobile.ui.sidebar.RemodexCircleIconButton
+import com.remodex.mobile.ui.sidebar.rememberSidebarColorPalette
 import com.remodex.mobile.ui.theme.isAgentLightChrome
 
 /** Truncate long filesystem paths for the header subtitle (middle ellipsis). */
@@ -76,11 +67,11 @@ fun truncatePathMiddle(
 }
 
 /**
- * Main turn toolbar: title, repo path, running pill, diff totals (opens diff), git actions menu,
+ * Main turn toolbar: title, repo path, running pill, git actions menu (incl. repository diff),
  * overflow (handoff / stop).
  * SwiftUI reference: [TurnToolbarContent](CodexMobile/CodexMobile/Views/Turn/TurnToolbarContent.swift).
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConversationHeader(
     title: String,
@@ -89,7 +80,7 @@ fun ConversationHeader(
     showRunningPill: Boolean,
     repoDiffTotals: GitDiffTotals?,
     isLoadingRepoDiff: Boolean,
-    onTapRepoDiff: (() -> Unit)?,
+    canViewRepoDiff: Boolean,
     showGitActions: Boolean,
     onGitAction: ((TurnGitActionKind) -> Unit)?,
     gitActionsBusy: Boolean,
@@ -111,7 +102,6 @@ fun ConversationHeader(
     var overflowExpanded by remember { mutableStateOf(false) }
     var gitMenuExpanded by remember { mutableStateOf(false) }
     val showOverflow = showDesktopHandoff || showWorktreeHandoff || showTurnStop
-    val diffCd = stringResource(R.string.cd_git_repo_diff_totals)
     val gitMenuCd = stringResource(R.string.cd_git_actions_menu)
     val chrome = isAgentLightChrome()
     val pathColor =
@@ -124,127 +114,107 @@ fun ConversationHeader(
         modifier =
             modifier
                 .fillMaxWidth()
-                .height(160.dp),
+                .height(108.dp),
     ) {
         HeaderAtmosphere(
             lightChrome = chrome,
             modifier =
                 Modifier
                     .matchParentSize()
-                    .statusBarsPadding()
-                    .padding(top = 4.dp),
+                    .statusBarsPadding(),
         )
-        Column(
+        Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
-                    .padding(start = 14.dp, end = 10.dp, top = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp),
+                    .padding(start = 12.dp, end = 8.dp, top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                HeaderMenuButton(onOpenDrawer = onOpenDrawer)
-                Text(
-                    text = title,
-                    style =
-                        MaterialTheme.typography.titleLarge.copy(
-                            lineHeight = 22.sp,
+            HeaderMenuButton(onOpenDrawer = onOpenDrawer)
+            Box(
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .then(
+                            if (pathSubtitle != null && onPathClick != null) {
+                                Modifier
+                                    .clickable(onClick = onPathClick)
+                                    .semantics {
+                                        contentDescription = pathSubtitle
+                                        role = Role.Button
+                                    }
+                            } else {
+                                Modifier
+                            },
                         ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                if (showRunningPill) {
-                    Surface(
-                        shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.turn_top_bar_thinking),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                        )
-                    }
-                }
-                HeaderActions(
-                    isLoadingRepoDiff = isLoadingRepoDiff,
-                    repoDiffTotals = repoDiffTotals,
-                    onTapRepoDiff = onTapRepoDiff,
-                    diffCd = diffCd,
-                    showGitActions = showGitActions,
-                    onGitAction = onGitAction,
-                    gitActionsBusy = gitActionsBusy,
-                    showsDiscardRuntimeRecovery = showsDiscardRuntimeRecovery,
-                    isGitActionEnabled = isGitActionEnabled,
-                    isGitInitialized = isGitInitialized,
-                    gitMenuCd = gitMenuCd,
-                    showOverflow = showOverflow,
-                    overflowExpanded = overflowExpanded,
-                    onSetOverflowExpanded = { overflowExpanded = it },
-                    gitMenuExpanded = gitMenuExpanded,
-                    onSetGitMenuExpanded = { gitMenuExpanded = it },
-                    showDesktopHandoff = showDesktopHandoff,
-                    handingOffToDesktop = handingOffToDesktop,
-                    showWorktreeHandoff = showWorktreeHandoff,
-                    handingOffWorktree = handingOffWorktree,
-                    isWorktreeProject = isWorktreeProject,
-                    showTurnStop = showTurnStop,
-                    onContinueDesktop = onContinueDesktop,
-                    onWorktreeHandoff = onWorktreeHandoff,
-                    onStopTurn = onStopTurn,
-                )
-            }
-            if (pathSubtitle != null && onPathClick != null) {
-                val pathSemanticsLabel = stringResource(R.string.turn_thread_path_dialog_title)
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .offset(y = (-2).dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(modifier = Modifier.size(36.dp))
+            ) {
+                Column {
                     Text(
-                        text = pathSubtitle,
-                        modifier =
-                            Modifier
-                                .weight(1f)
-                                .padding(start = 8.dp),
+                        text = title,
                         style =
-                            MaterialTheme.typography.labelSmall.copy(
-                                lineHeight = 14.sp,
+                            MaterialTheme.typography.titleLarge.copy(
+                                lineHeight = 22.sp,
                             ),
-                        fontFamily = FontFamily.Monospace,
-                        color = pathColor,
                         maxLines = 1,
-                        overflow = TextOverflow.MiddleEllipsis,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    Box(
-                        modifier =
-                            Modifier
-                                .size(28.dp)
-                                .clickable(onClick = onPathClick)
-                                .semantics {
-                                    contentDescription = pathSemanticsLabel
-                                    role = Role.Button
-                                },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.ContentCopy,
-                            contentDescription = null,
-                            modifier = Modifier.size(15.dp),
-                            tint = pathColor,
+                    if (pathSubtitle != null) {
+                        Text(
+                            text = pathSubtitle,
+                            style =
+                                MaterialTheme.typography.labelSmall.copy(
+                                    lineHeight = 13.sp,
+                                ),
+                            fontFamily = FontFamily.Monospace,
+                            color = pathColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.MiddleEllipsis,
                         )
                     }
                 }
             }
+            if (showRunningPill) {
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                ) {
+                    Text(
+                        text = stringResource(R.string.turn_top_bar_thinking),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    )
+                }
+            }
+            HeaderActions(
+                repoDiffTotals = repoDiffTotals,
+                isLoadingRepoDiff = isLoadingRepoDiff,
+                canViewRepoDiff = canViewRepoDiff,
+                showGitActions = showGitActions,
+                onGitAction = onGitAction,
+                gitActionsBusy = gitActionsBusy,
+                showsDiscardRuntimeRecovery = showsDiscardRuntimeRecovery,
+                isGitActionEnabled = isGitActionEnabled,
+                isGitInitialized = isGitInitialized,
+                gitMenuCd = gitMenuCd,
+                showOverflow = showOverflow,
+                overflowExpanded = overflowExpanded,
+                onSetOverflowExpanded = { overflowExpanded = it },
+                gitMenuExpanded = gitMenuExpanded,
+                onSetGitMenuExpanded = { gitMenuExpanded = it },
+                showDesktopHandoff = showDesktopHandoff,
+                handingOffToDesktop = handingOffToDesktop,
+                showWorktreeHandoff = showWorktreeHandoff,
+                handingOffWorktree = handingOffWorktree,
+                isWorktreeProject = isWorktreeProject,
+                showTurnStop = showTurnStop,
+                onContinueDesktop = onContinueDesktop,
+                onWorktreeHandoff = onWorktreeHandoff,
+                onStopTurn = onStopTurn,
+            )
         }
     }
 }
@@ -254,10 +224,8 @@ private fun HeaderAtmosphere(
     lightChrome: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val haze = if (lightChrome) Color(0xFF25282B) else Color.White
-    val hazeAlpha = if (lightChrome) 0.052f else 0.074f
-    val lowerHazeAlpha = if (lightChrome) 0.032f else 0.046f
-    val lineAlpha = if (lightChrome) 0.095f else 0.13f
+    val base = if (lightChrome) AgentLightColors.ScreenBg else MaterialTheme.colorScheme.background
+    val topAlpha = if (lightChrome) 0.86f else 0.74f
     Box(
         modifier =
             modifier
@@ -266,54 +234,18 @@ private fun HeaderAtmosphere(
         Canvas(
             modifier =
                 Modifier
-                    .matchParentSize()
-                    .blur(48.dp),
+                    .matchParentSize(),
         ) {
-            drawOval(
+            drawRect(
                 brush =
-                    Brush.radialGradient(
-                        colors = listOf(haze.copy(alpha = hazeAlpha), haze.copy(alpha = 0f)),
-                        center = Offset(size.width * 0.34f, size.height * 0.18f),
-                        radius = size.width * 0.50f,
+                    Brush.verticalGradient(
+                        colorStops =
+                            arrayOf(
+                                0f to base.copy(alpha = topAlpha),
+                                0.62f to base.copy(alpha = topAlpha * 0.44f),
+                                1f to base.copy(alpha = 0f),
+                            ),
                     ),
-                topLeft = Offset(size.width * -0.10f, size.height * -0.36f),
-                size = Size(size.width * 0.88f, size.height * 1.00f),
-            )
-            drawOval(
-                brush =
-                    Brush.radialGradient(
-                        colors = listOf(haze.copy(alpha = lowerHazeAlpha), haze.copy(alpha = 0f)),
-                        center = Offset(size.width * 0.78f, size.height * 0.22f),
-                        radius = size.width * 0.48f,
-                    ),
-                topLeft = Offset(size.width * 0.42f, size.height * -0.32f),
-                size = Size(size.width * 0.76f, size.height * 0.96f),
-            )
-        }
-        Canvas(modifier = Modifier.matchParentSize()) {
-            val contour = Path().apply {
-                moveTo(size.width * 0.08f, size.height * 0.38f)
-                cubicTo(
-                    size.width * 0.25f,
-                    size.height * 0.31f,
-                    size.width * 0.43f,
-                    size.height * 0.39f,
-                    size.width * 0.58f,
-                    size.height * 0.34f,
-                )
-                cubicTo(
-                    size.width * 0.74f,
-                    size.height * 0.29f,
-                    size.width * 0.84f,
-                    size.height * 0.35f,
-                    size.width * 0.94f,
-                    size.height * 0.31f,
-                )
-            }
-            drawPath(
-                path = contour,
-                color = haze.copy(alpha = lineAlpha),
-                style = Stroke(width = 0.65.dp.toPx(), cap = StrokeCap.Round),
             )
         }
     }
@@ -321,79 +253,26 @@ private fun HeaderAtmosphere(
 
 @Composable
 private fun HeaderMenuButton(onOpenDrawer: () -> Unit) {
-    HeaderFloatingIconButton(
+    val colors = rememberSidebarColorPalette()
+    RemodexCircleIconButton(
         onClick = onOpenDrawer,
         contentDescription = stringResource(R.string.cd_open_navigation_drawer),
-    ) { tint ->
+        colors = colors,
+    ) {
         Icon(
             painter = painterResource(LucideR.drawable.lucide_ic_menu),
             contentDescription = null,
-            modifier = Modifier.size(21.dp),
-            tint = tint,
+            modifier = Modifier.size(20.dp),
+            tint = colors.primaryText,
         )
     }
 }
 
 @Composable
-private fun HeaderFloatingIconButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    contentDescription: String? = null,
-    content: @Composable (Color) -> Unit,
-) {
-    val chrome = isAgentLightChrome()
-    val iconTint =
-        if (chrome) AgentLightColors.TextPrimary else MaterialTheme.colorScheme.onSurface
-    val fill =
-        if (chrome) {
-            AgentLightColors.Surface.copy(alpha = 0.91f)
-        } else {
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)
-        }
-    val border =
-        if (chrome) {
-            Color.White.copy(alpha = 0.58f)
-        } else {
-            Color.White.copy(alpha = 0.12f)
-        }
-    IconButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier =
-            modifier
-                .size(56.dp)
-                .then(
-                    if (contentDescription != null) {
-                        Modifier.semantics { this.contentDescription = contentDescription }
-                    } else {
-                        Modifier
-                    },
-                ),
-    ) {
-        Surface(
-            shape = CircleShape,
-            color = fill,
-            tonalElevation = if (chrome) 0.dp else 3.dp,
-            shadowElevation = if (chrome) 7.dp else 5.dp,
-            modifier =
-                Modifier
-                    .size(46.dp)
-                    .border(0.7.dp, border, CircleShape),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                content(if (enabled) iconTint else iconTint.copy(alpha = 0.42f))
-            }
-        }
-    }
-}
-
-@Composable
 private fun HeaderActions(
-    isLoadingRepoDiff: Boolean,
     repoDiffTotals: GitDiffTotals?,
-    onTapRepoDiff: (() -> Unit)?,
-    diffCd: String,
+    isLoadingRepoDiff: Boolean,
+    canViewRepoDiff: Boolean,
     showGitActions: Boolean,
     onGitAction: ((TurnGitActionKind) -> Unit)?,
     gitActionsBusy: Boolean,
@@ -416,72 +295,28 @@ private fun HeaderActions(
     onWorktreeHandoff: () -> Unit,
     onStopTurn: () -> Unit,
 ) {
+    val colors = rememberSidebarColorPalette()
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (isLoadingRepoDiff) {
-            CircularProgressIndicator(
-                modifier =
-                    Modifier
-                        .size(22.dp)
-                        .padding(end = 4.dp),
-                strokeWidth = 2.dp,
-            )
-        } else if (repoDiffTotals != null) {
-            val tapDiff = onTapRepoDiff
-            Row(
-                modifier =
-                    Modifier.padding(end = 2.dp).then(
-                        if (tapDiff != null) {
-                            Modifier
-                                .clickable(onClick = tapDiff)
-                                .semantics {
-                                    contentDescription = diffCd
-                                    role = Role.Button
-                                }
-                        } else {
-                            Modifier
-                        }
-                    ),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "+${repoDiffTotals.additions}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = RemodexGitAddition,
-                )
-                Text(
-                    text = "-${repoDiffTotals.deletions}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.error,
-                )
-                if (repoDiffTotals.binaryFiles > 0) {
-                    Text(
-                        text = "B${repoDiffTotals.binaryFiles}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
         if (showGitActions && onGitAction != null) {
             Box {
-                HeaderFloatingIconButton(
+                RemodexCircleIconButton(
                     onClick = { onSetGitMenuExpanded(true) },
-                    enabled = isGitActionEnabled && !gitActionsBusy,
+                    enabled = (canViewRepoDiff || isGitActionEnabled) && !gitActionsBusy,
                     contentDescription = gitMenuCd,
-                ) { tint ->
+                    colors = colors,
+                ) {
+                    val tint = colors.primaryText.copy(alpha = if ((canViewRepoDiff || isGitActionEnabled) && !gitActionsBusy) 1f else 0.42f)
                     if (gitActionsBusy) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(21.dp),
+                            modifier = Modifier.size(20.dp),
                             strokeWidth = 2.dp,
                             color = tint,
                         )
                     } else {
-                        Box(modifier = Modifier.size(22.dp)) {
+                        Box(modifier = Modifier.size(20.dp)) {
                             GitNodeConnectorIcon(
                                 tint = tint,
                                 modifier = Modifier.fillMaxSize(),
@@ -492,6 +327,9 @@ private fun HeaderActions(
                 GitActionsDropdown(
                     expanded = gitMenuExpanded,
                     onDismissRequest = { onSetGitMenuExpanded(false) },
+                    repoDiffTotals = repoDiffTotals,
+                    isLoadingRepoDiff = isLoadingRepoDiff,
+                    canViewRepoDiff = canViewRepoDiff,
                     showsDiscardRuntimeRecovery = showsDiscardRuntimeRecovery,
                     isGitActionEnabled = isGitActionEnabled,
                     isGitInitialized = isGitInitialized,
@@ -505,15 +343,16 @@ private fun HeaderActions(
 
         if (showOverflow) {
             Box {
-                HeaderFloatingIconButton(
+                RemodexCircleIconButton(
                     onClick = { onSetOverflowExpanded(true) },
                     contentDescription = stringResource(R.string.turn_top_bar_thread_actions_cd),
-                ) { tint ->
+                    colors = colors,
+                ) {
                     Icon(
                         painter = painterResource(LucideR.drawable.lucide_ic_ellipsis_vertical),
                         contentDescription = null,
-                        modifier = Modifier.size(21.dp),
-                        tint = tint,
+                        modifier = Modifier.size(20.dp),
+                        tint = colors.primaryText,
                     )
                 }
                 RemodexDropdownMenu(
@@ -582,6 +421,9 @@ private fun HeaderActions(
 private fun GitActionsDropdown(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
+    repoDiffTotals: GitDiffTotals?,
+    isLoadingRepoDiff: Boolean,
+    canViewRepoDiff: Boolean,
     showsDiscardRuntimeRecovery: Boolean,
     isGitActionEnabled: Boolean,
     isGitInitialized: Boolean,
@@ -590,60 +432,209 @@ private fun GitActionsDropdown(
     RemodexDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
+        modifier = Modifier.widthIn(min = 272.dp),
     ) {
-        Text(
-            text = stringResource(R.string.git_action_section_update),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        GitActionMenuSectionHeader(stringResource(R.string.git_action_section_changes))
+        GitActionChangesMenuItem(
+            totals = repoDiffTotals,
+            isLoading = isLoadingRepoDiff,
+            enabled = canViewRepoDiff,
+            onClick = { onSelect(TurnGitActionKind.viewRepositoryDiff) },
         )
-        DropdownMenuItem(
-            text = { Text(TurnGitActionKind.syncNow.title) },
+        HorizontalDivider()
+        GitActionMenuSectionHeader(stringResource(R.string.git_action_section_write))
+        GitActionMenuItem(
+            label = TurnGitActionKind.commit.title,
+            useGitNodeIcon = true,
+            onClick = { onSelect(TurnGitActionKind.commit) },
+            enabled = isGitActionEnabled,
+        )
+        GitActionMenuItem(
+            label = TurnGitActionKind.push.title,
+            iconRes = LucideR.drawable.lucide_ic_arrow_up,
+            onClick = { onSelect(TurnGitActionKind.push) },
+            enabled = isGitActionEnabled,
+        )
+        GitActionMenuItem(
+            label = TurnGitActionKind.commitAndPush.title,
+            iconRes = LucideR.drawable.lucide_ic_cloud,
+            onClick = { onSelect(TurnGitActionKind.commitAndPush) },
+            enabled = isGitActionEnabled,
+        )
+        GitActionMenuItem(
+            label = stringResource(R.string.git_action_commit_push_pr),
+            iconRes = LucideR.drawable.lucide_ic_github,
+            onClick = { onSelect(TurnGitActionKind.commitPushAndPullRequest) },
+            enabled = isGitActionEnabled,
+        )
+        GitActionMenuItem(
+            label = TurnGitActionKind.createPR.title,
+            iconRes = LucideR.drawable.lucide_ic_github,
+            onClick = { onSelect(TurnGitActionKind.createPR) },
+            enabled = isGitActionEnabled,
+        )
+        HorizontalDivider()
+        GitActionMenuSectionHeader(stringResource(R.string.git_action_section_update))
+        GitActionMenuItem(
+            label = TurnGitActionKind.syncNow.title,
+            iconRes = LucideR.drawable.lucide_ic_refresh_cw,
             onClick = { onSelect(TurnGitActionKind.syncNow) },
             enabled = isGitActionEnabled,
         )
-        DropdownMenuItem(
-            text = { Text(TurnGitActionKind.initialize.title) },
-            onClick = { onSelect(TurnGitActionKind.initialize) },
-            enabled = isGitActionEnabled && !isGitInitialized,
-        )
-        HorizontalDivider()
-        Text(
-            text = stringResource(R.string.git_action_section_write),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-        )
-        listOf(
-            TurnGitActionKind.commit,
-            TurnGitActionKind.push,
-            TurnGitActionKind.commitAndPush,
-            TurnGitActionKind.createPR,
-            TurnGitActionKind.previewCommitPushToast,
-        ).forEach { kind ->
-            DropdownMenuItem(
-                text = { Text(kind.title) },
-                onClick = { onSelect(kind) },
+        if (!isGitInitialized) {
+            GitActionMenuItem(
+                label = TurnGitActionKind.initialize.title,
+                iconRes = LucideR.drawable.lucide_ic_git_branch,
+                onClick = { onSelect(TurnGitActionKind.initialize) },
                 enabled = isGitActionEnabled,
             )
         }
         if (showsDiscardRuntimeRecovery) {
             HorizontalDivider()
-            Text(
-                text = stringResource(R.string.git_action_section_recovery),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            )
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        TurnGitActionKind.discardRuntimeChangesAndSync.title,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                },
+            GitActionMenuSectionHeader(stringResource(R.string.git_action_section_recovery))
+            GitActionMenuItem(
+                label = TurnGitActionKind.discardRuntimeChangesAndSync.title,
+                iconRes = LucideR.drawable.lucide_ic_trash_2,
                 onClick = { onSelect(TurnGitActionKind.discardRuntimeChangesAndSync) },
                 enabled = isGitActionEnabled,
+                labelColor = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GitActionMenuSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+    )
+}
+
+@Composable
+private fun GitActionMenuItem(
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    @DrawableRes iconRes: Int? = null,
+    useGitNodeIcon: Boolean = false,
+    labelColor: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    DropdownMenuItem(
+        text = {
+            Text(
+                text = label,
+                color = if (enabled) labelColor else labelColor.copy(alpha = 0.42f),
+            )
+        },
+        leadingIcon = {
+            GitActionMenuLeadingIcon(
+                iconRes = iconRes,
+                useGitNodeIcon = useGitNodeIcon,
+                enabled = enabled,
+            )
+        },
+        onClick = onClick,
+        enabled = enabled,
+    )
+}
+
+@Composable
+private fun GitActionMenuLeadingIcon(
+    @DrawableRes iconRes: Int?,
+    useGitNodeIcon: Boolean,
+    enabled: Boolean,
+) {
+    val tint =
+        MaterialTheme.colorScheme.onSurface.copy(
+            alpha = if (enabled) 0.92f else 0.42f,
+        )
+    Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+        when {
+            useGitNodeIcon ->
+                GitNodeConnectorIcon(
+                    tint = tint,
+                    modifier = Modifier.size(20.dp),
+                )
+            iconRes != null ->
+                Icon(
+                    painter = painterResource(iconRes),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = tint,
+                )
+        }
+    }
+}
+
+@Composable
+private fun GitActionChangesMenuItem(
+    totals: GitDiffTotals?,
+    isLoading: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    DropdownMenuItem(
+        text = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else if (totals != null) {
+                    GitActionDiffTotalsRow(totals = totals, enabled = enabled)
+                }
+            }
+        },
+        leadingIcon = {
+            Icon(
+                painter = painterResource(LucideR.drawable.lucide_ic_file_diff),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint =
+                    MaterialTheme.colorScheme.onSurface.copy(
+                        alpha = if (enabled) 0.92f else 0.42f,
+                    ),
+            )
+        },
+        onClick = onClick,
+        enabled = enabled,
+    )
+}
+
+@Composable
+private fun GitActionDiffTotalsRow(
+    totals: GitDiffTotals,
+    enabled: Boolean,
+) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val labelAlpha = if (enabled) 1f else 0.42f
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "+${totals.additions}",
+            style = MaterialTheme.typography.labelLarge,
+            color = RemodexGitAddition.copy(alpha = labelAlpha),
+        )
+        Text(
+            text = "-${totals.deletions}",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.error.copy(alpha = labelAlpha),
+        )
+        if (totals.binaryFiles > 0) {
+            Text(
+                text = "B${totals.binaryFiles}",
+                style = MaterialTheme.typography.labelMedium,
+                color = muted.copy(alpha = labelAlpha),
             )
         }
     }

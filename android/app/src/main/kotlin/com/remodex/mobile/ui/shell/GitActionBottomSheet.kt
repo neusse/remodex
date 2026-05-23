@@ -1,5 +1,6 @@
 package com.remodex.mobile.ui.shell
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +42,8 @@ import com.remodex.mobile.core.model.GitRepoSyncResult
 import com.remodex.mobile.ui.agent.GitNodeConnectorIcon
 import com.remodex.mobile.ui.theme.RemodexGitAddition
 import com.remodex.mobile.ui.theme.RemodexModalBottomSheet
+import com.remodex.mobile.ui.theme.RemodexPopupChrome
+import com.remodex.mobile.ui.theme.RemodexPopupSurface
 
 enum class GitActionSheetMode {
     commit,
@@ -285,7 +288,10 @@ private fun GitActionSheetHeader(
         Surface(
             shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.secondaryContainer,
-            modifier = Modifier.size(44.dp),
+            modifier =
+                Modifier
+                    .size(44.dp)
+                    .border(RemodexPopupChrome.borderStroke(), RoundedCornerShape(12.dp)),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 GitNodeConnectorIcon(
@@ -422,21 +428,25 @@ private fun GitActionNextSteps(
     enabled: Boolean,
     onSelected: (GitActionNextStep) -> Unit,
 ) {
-    Column(
-        modifier =
-            Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(0.dp),
-    ) {
-        nextStepsFor(mode).forEachIndexed { index, step ->
-            GitActionNextStepRow(
-                title = nextStepTitle(step),
-                detail = nextStepDetail(step),
-                selected = selected == step,
-                enabled = enabled,
-                onClick = { onSelected(step) },
-            )
-            if (index != nextStepsFor(mode).lastIndex) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    RemodexPopupSurface(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
+        ) {
+            nextStepsFor(mode).forEachIndexed { index, step ->
+                GitActionNextStepRow(
+                    title = nextStepTitle(step),
+                    detail = nextStepDetail(step),
+                    selected = selected == step,
+                    enabled = enabled,
+                    onClick = { onSelected(step) },
+                )
+                if (index != nextStepsFor(mode).lastIndex) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
             }
         }
     }

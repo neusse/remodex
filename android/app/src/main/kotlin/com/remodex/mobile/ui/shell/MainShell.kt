@@ -9,12 +9,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -40,6 +42,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.res.stringResource
@@ -58,6 +61,8 @@ import com.remodex.mobile.core.model.AIUnifiedPatchParser
 import com.remodex.mobile.core.model.GitBranchesWithStatusResult
 import com.remodex.mobile.core.model.GitDiffTotals
 import com.remodex.mobile.core.model.GitRepoSyncResult
+import com.remodex.mobile.core.model.GitRunStackedActionResult
+import com.remodex.mobile.core.model.GitStackedActionProgressEvent
 import com.remodex.mobile.core.model.GitWorktreeChangeTransferMode
 import com.remodex.mobile.core.model.PendingApprovalDecision
 import com.remodex.mobile.core.model.TurnGitActionKind
@@ -94,9 +99,16 @@ import com.remodex.mobile.ui.turn.RepoMarkdownFileLink
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withTimeout
+import java.util.UUID
 
 private const val GIT_OPERATION_TIMEOUT_MS = 150_000L
+
+private object GitInitPromptSession {
+    /** Process-local so a cold start can show the prompt once, but chat switches stay quiet. */
+    var shownThisProcess: Boolean = false
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -275,7 +287,12 @@ fun MainShell(
     LaunchedEffect(repoStatusSnapshot?.state, gitCwd, showGitControls) {
         val needsInit = repoStatusSnapshot?.state in setOf("not_initialized", "missing_local_repo")
         if (showGitControls && needsInit) {
-            showGitInitPrompt = true
+            if (!GitInitPromptSession.shownThisProcess) {
+                GitInitPromptSession.shownThisProcess = true
+                showGitInitPrompt = true
+            } else {
+                showGitInitPrompt = false
+            }
         } else {
             showGitInitPrompt = false
             gitInitError = null
@@ -363,6 +380,13 @@ fun MainShell(
         repoDiffSheetLastTurnRows =
             RepoDiffLastTurnAggregator.fileRowsFromLastTurn(threadMessages)
         enqueueRepoDiffFullTreePrefetch()
+        scope.launch {
+            AppContainer.betaEngagementRepository.recordMissionEvent(
+                eventType = "repo_diff_reviewed",
+                screen = "git",
+                refreshAfter = false,
+            )
+        }
     }
 
     fun openRepoDiffSheetFromMarkdown(link: String) {
@@ -380,6 +404,13 @@ fun MainShell(
         repoDiffSheetFullError = null
         enqueueRepoDiffFullTreePrefetch()
         showRepoDiffSheet = true
+        scope.launch {
+            AppContainer.betaEngagementRepository.recordMissionEvent(
+                eventType = "repo_diff_reviewed",
+                screen = "git",
+                refreshAfter = false,
+            )
+        }
     }
 
     LaunchedEffect(activeThreadId, gitToolbarRefreshNonce) {
@@ -491,71 +522,96 @@ fun MainShell(
     ) {
         gitActionBusy = true
         gitActionError = null
+        val progressId = UUID.randomUUID().toString()
+        val wireAction = submission.nextStep.toStackedWireAction()
+        configureGitStackedProgressUi(
+            wireAction = wireAction,
+            step = submission.nextStep,
+            onConfigure = { message, includesPush, includesPr, phase ->
+                gitActionProgressMessage = message
+                gitActionProgressIncludesPush = includesPush
+                gitActionProgressIncludesPullRequest = includesPr
+                gitActionProgressPhase = phase
+            },
+        )
+        val progressJob =
+            scope.launch {
+                repository.gitStackedActionProgress.collect { event ->
+                    if (event.progressId == progressId) {
+                        applyGitStackedProgressEvent(
+                            event = event,
+                            onPhase = { gitActionProgressPhase = it },
+                            currentPhase = gitActionProgressPhase,
+                        )
+                    }
+                }
+            }
         try {
             withTimeout(GIT_OPERATION_TIMEOUT_MS) {
                 val git = GitActionsService(repository, cwd)
-                when (submission.nextStep) {
-                    GitActionNextStep.commit -> {
-                        gitActionProgressMessage = null
-                        gitActionProgressIncludesPush = false
-                        gitActionProgressIncludesPullRequest = false
+                val commitMessage =
+                    if (submission.nextStep.involvesCommit()) {
                         gitActionProgressPhase = GitActionProgressPhase.resolvingCommitMessage
-                        val commitMessage = resolveCommitMessage(git, submission.commitMessage)
-                        gitActionProgressPhase = GitActionProgressPhase.committing
-                        git.commit(commitMessage)
-                        gitActionProgressPhase = GitActionProgressPhase.done
+                        resolveCommitMessage(git, submission.commitMessage)
+                    } else {
+                        null
                     }
-                    GitActionNextStep.commitAndPush -> {
-                        gitActionProgressMessage = null
-                        gitActionProgressIncludesPush = true
-                        gitActionProgressIncludesPullRequest = false
-                        gitActionProgressPhase = GitActionProgressPhase.resolvingCommitMessage
-                        val commitMessage = resolveCommitMessage(git, submission.commitMessage)
-                        gitActionProgressPhase = GitActionProgressPhase.committing
-                        git.commit(commitMessage)
-                        gitActionProgressPhase = GitActionProgressPhase.pushing
-                        git.push(submission.pushRemoteName)
-                        gitActionProgressPhase = GitActionProgressPhase.done
-                    }
-                    GitActionNextStep.commitPushAndPullRequest -> {
-                        gitActionProgressMessage = null
-                        gitActionProgressIncludesPush = true
-                        gitActionProgressIncludesPullRequest = true
-                        gitActionProgressPhase = GitActionProgressPhase.resolvingCommitMessage
-                        val commitMessage = resolveCommitMessage(git, submission.commitMessage)
-                        gitActionProgressPhase = GitActionProgressPhase.committing
-                        git.commit(commitMessage)
-                        gitActionProgressPhase = GitActionProgressPhase.pushing
-                        git.push(submission.pushRemoteName)
-                        gitActionProgressPhase = GitActionProgressPhase.preparingPullRequest
-                        openPullRequestUrl(git, submission)
-                        gitActionProgressPhase = GitActionProgressPhase.done
-                    }
-                    GitActionNextStep.push -> {
-                        gitActionProgressMessage = "Pushing branch..."
-                        git.push(submission.pushRemoteName)
-                        gitActionProgressMessage = "Pushed branch."
-                    }
-                    GitActionNextStep.pushAndPullRequest -> {
-                        gitActionProgressMessage = "Pushing branch..."
-                        git.push(submission.pushRemoteName)
-                        gitActionProgressMessage = "Preparing pull request..."
-                        openPullRequestUrl(git, submission)
-                        gitActionProgressMessage = "Pull request draft opened."
-                    }
-                    GitActionNextStep.createPullRequest -> {
-                        gitActionProgressMessage = "Preparing pull request..."
-                        openPullRequestUrl(git, submission)
-                        gitActionProgressMessage = "Pull request draft opened."
-                    }
+                val result =
+                    git.runStackedAction(
+                        action = wireAction,
+                        commitMessage = commitMessage,
+                        baseBranch =
+                            submission.baseBranch
+                                .trim()
+                                .takeIf { submission.nextStep.involvesNativePullRequest() },
+                        progressId = progressId,
+                    )
+                result.status?.let { snapshot ->
+                    repoStatusSnapshot = snapshot
+                    repoDiffTotals = snapshot.workingTreeDiffTotals
                 }
+                if (submission.nextStep.involvesNativePullRequest() && result.pullRequest != null) {
+                    AppContainer.betaEngagementRepository.recordMissionEvent(
+                        eventType = "mobile_pr_draft_opened",
+                        screen = "git",
+                        refreshAfter = false,
+                    )
+                }
+                gitActionProgressMessage =
+                    formatGitStackedActionSuccessMessage(
+                        context = context,
+                        step = submission.nextStep,
+                        result = result,
+                    )
+                gitActionProgressPhase = GitActionProgressPhase.done
             }
             gitActionError = null
             gitActionSheetMode = null
             gitActionSheetInitialNextStep = null
         } catch (e: Throwable) {
-            handleGitActionFailure(e) { showNothingToCommit = true }
+            if (shouldFallbackPullRequestToBrowser(e, submission.nextStep)) {
+                try {
+                    val git = GitActionsService(repository, cwd)
+                    openPullRequestUrl(git, submission)
+                    gitActionProgressMessage =
+                        context.getString(R.string.git_pr_opened_browser_fallback)
+                    gitActionProgressPhase = GitActionProgressPhase.done
+                    AppContainer.betaEngagementRepository.recordMissionEvent(
+                        eventType = "mobile_pr_draft_opened",
+                        screen = "git",
+                        refreshAfter = false,
+                    )
+                    gitActionError = null
+                    gitActionSheetMode = null
+                    gitActionSheetInitialNextStep = null
+                } catch (fallbackError: Throwable) {
+                    handleGitActionFailure(fallbackError) { showNothingToCommit = true }
+                }
+            } else {
+                handleGitActionFailure(e) { showNothingToCommit = true }
+            }
         } finally {
+            progressJob.cancel()
             gitActionBusy = false
             gitToolbarRefreshNonce++
         }
@@ -802,6 +858,12 @@ fun MainShell(
     }
 
     fun handleGitAction(action: TurnGitActionKind) {
+        if (action == TurnGitActionKind.viewRepositoryDiff) {
+            if (repoDiffTotals?.hasChanges == true && showGitControls) {
+                openRepoDiffSheetFromHeader()
+            }
+            return
+        }
         val cwd = gitCwd ?: return
         if (action == TurnGitActionKind.discardRuntimeChangesAndSync) {
             enqueueGitPreflightIfNeeded(cwd, TurnGitPreflightOperation.discardRuntimeChanges)
@@ -833,23 +895,9 @@ fun MainShell(
                 gitActionSheetInitialNextStep = GitActionNextStep.createPullRequest
                 return
             }
-            TurnGitActionKind.previewCommitPushToast -> {
-                if (gitActionBusy) return
-                scope.launch {
-                    gitActionBusy = true
-                    gitActionError = null
-                    gitActionProgressMessage = null
-                    gitActionProgressIncludesPush = true
-                    gitActionProgressIncludesPullRequest = false
-                    gitActionProgressPhase = GitActionProgressPhase.resolvingCommitMessage
-                    delay(900)
-                    gitActionProgressPhase = GitActionProgressPhase.committing
-                    delay(900)
-                    gitActionProgressPhase = GitActionProgressPhase.pushing
-                    delay(900)
-                    gitActionProgressPhase = GitActionProgressPhase.done
-                    gitActionBusy = false
-                }
+            TurnGitActionKind.commitPushAndPullRequest -> {
+                gitActionSheetMode = GitActionSheetMode.commit
+                gitActionSheetInitialNextStep = GitActionNextStep.commitPushAndPullRequest
                 return
             }
             else -> Unit
@@ -966,7 +1014,12 @@ fun MainShell(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
+            val drawerWidth = LocalConfiguration.current.screenWidthDp.dp
             ModalDrawerSheet(
+                modifier =
+                    Modifier
+                        .width(drawerWidth)
+                        .fillMaxHeight(),
                 drawerContainerColor = sidebarColors.background,
                 drawerContentColor = sidebarColors.primaryText,
             ) {
@@ -1015,8 +1068,7 @@ fun MainShell(
                         onGitContextChanged = { gitToolbarRefreshNonce++ },
                         modifier =
                             Modifier
-                                .fillMaxSize()
-                                .then(if (showShellHeader) Modifier.statusBarsPadding() else Modifier),
+                                .fillMaxSize(),
                     )
                 }
                 if (showShellHeader) {
@@ -1030,14 +1082,10 @@ fun MainShell(
                         showRunningPill = showTurnStop,
                         repoDiffTotals = repoDiffTotals,
                         isLoadingRepoDiff = isLoadingRepoDiff,
-                        onTapRepoDiff =
-                            if (repoDiffTotals?.hasChanges == true && showGitControls) {
-                                {
-                                    openRepoDiffSheetFromHeader()
-                                }
-                            } else {
-                                null
-                            },
+                        canViewRepoDiff =
+                            repoDiffTotals?.hasChanges == true &&
+                                showGitControls &&
+                                !isLoadingRepoDiff,
                         showGitActions = showGitControls,
                         onGitAction = { handleGitAction(it) },
                         gitActionsBusy = gitActionBusy,
@@ -1098,7 +1146,7 @@ fun MainShell(
                             Modifier
                                 .align(Alignment.TopCenter)
                                 .statusBarsPadding()
-                                .padding(top = 128.dp),
+                                .padding(top = 92.dp),
                     )
                 }
             }
@@ -1449,3 +1497,83 @@ private fun String.withoutGitLineEndingWarnings(): String =
 private fun String.isGitLineEndingWarning(): Boolean =
     startsWith("warning: in the working copy of ") &&
         contains("LF will be replaced by CRLF the next time Git touches it")
+
+private fun configureGitStackedProgressUi(
+    wireAction: String,
+    step: GitActionNextStep,
+    onConfigure: (
+        message: String?,
+        includesPush: Boolean,
+        includesPullRequest: Boolean,
+        phase: GitActionProgressPhase?,
+    ) -> Unit,
+) {
+    onConfigure(
+        null,
+        wireAction != "commit",
+        step.involvesNativePullRequest(),
+        when {
+            step.involvesCommit() -> null
+            else -> GitActionProgressPhase.pushing
+        },
+    )
+}
+
+private fun applyGitStackedProgressEvent(
+    event: GitStackedActionProgressEvent,
+    onPhase: (GitActionProgressPhase?) -> Unit,
+    currentPhase: GitActionProgressPhase?,
+) {
+    if (event.status != "started") return
+    onPhase(
+        when (event.phase) {
+            "commit" -> GitActionProgressPhase.committing
+            "push" -> GitActionProgressPhase.pushing
+            "createPR" -> GitActionProgressPhase.preparingPullRequest
+            else -> currentPhase
+        },
+    )
+}
+
+private fun shouldFallbackPullRequestToBrowser(
+    error: Throwable,
+    step: GitActionNextStep,
+): Boolean {
+    if (!step.involvesNativePullRequest()) return false
+    val code = (error as? GitActionsError.BridgeFailure)?.errorCode ?: return false
+    return code == "github_cli_unavailable" || code == "github_cli_unauthenticated"
+}
+
+private fun formatGitStackedActionSuccessMessage(
+    context: android.content.Context,
+    step: GitActionNextStep,
+    result: GitRunStackedActionResult,
+): String {
+    result.pullRequest?.let { pr ->
+        val number = pr.number
+        return when (pr.status) {
+            "created" ->
+                if (number != null) {
+                    context.getString(R.string.git_pr_created, number)
+                } else {
+                    pr.title.ifBlank { "Pull request created." }
+                }
+            "opened_existing" ->
+                if (number != null) {
+                    context.getString(R.string.git_pr_opened_existing, number)
+                } else {
+                    pr.title.ifBlank { "Opened existing pull request." }
+                }
+            else -> pr.title
+        }
+    }
+    return when (step) {
+        GitActionNextStep.commit -> context.getString(R.string.git_stacked_commit_done)
+        GitActionNextStep.push,
+        GitActionNextStep.commitAndPush,
+        GitActionNextStep.commitPushAndPullRequest,
+        GitActionNextStep.pushAndPullRequest,
+        GitActionNextStep.createPullRequest,
+        -> context.getString(R.string.git_stacked_push_done)
+    }
+}

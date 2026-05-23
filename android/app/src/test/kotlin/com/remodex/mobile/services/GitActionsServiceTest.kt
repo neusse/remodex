@@ -10,6 +10,8 @@ import com.remodex.mobile.core.model.CodexModelOption
 import com.remodex.mobile.core.model.CodexBridgeUpdatePrompt
 import com.remodex.mobile.core.model.CodexServiceTier
 import com.remodex.mobile.core.model.CodexThread
+import com.remodex.mobile.core.model.CodexTurnMention
+import com.remodex.mobile.core.model.CodexTurnSkillMention
 import com.remodex.mobile.core.model.GitWorktreeChangeTransferMode
 import com.remodex.mobile.core.model.JSONValue
 import com.remodex.mobile.core.model.PendingApprovalDecision
@@ -112,6 +114,48 @@ class GitActionsServiceTest {
             assertTrue(r.success)
             assertEquals("/dest", r.targetPath)
             assertTrue(r.transferredChanges)
+        }
+
+    @Test
+    fun runStackedAction_sendsActionProgressIdAndBaseBranch() =
+        runTest {
+            var captured: Pair<String, JSONValue?>? = null
+            val repo =
+                GitActionsFakeRepository { method, params ->
+                    captured = method to params
+                    RPCMessage.success(
+                        id = null,
+                        result =
+                            JSONValue.Obj(
+                                mapOf(
+                                    "action" to JSONValue.Str("commit_push_pr"),
+                                    "pr" to
+                                        JSONValue.Obj(
+                                            mapOf(
+                                                "status" to JSONValue.Str("created"),
+                                                "number" to JSONValue.NumLong(9),
+                                            ),
+                                        ),
+                                ),
+                            ),
+                    )
+                }
+            val result =
+                GitActionsService(repo, "/repo").runStackedAction(
+                    action = "commit_push_pr",
+                    commitMessage = "Fix flow",
+                    baseBranch = "main",
+                    progressId = "progress-1",
+                )
+            val m = (captured!!.second as JSONValue.Obj).map
+            assertEquals("git/runStackedAction", captured!!.first)
+            assertEquals("commit_push_pr", m["action"]?.stringValue)
+            assertEquals("Fix flow", m["commitMessage"]?.stringValue)
+            assertEquals("main", m["baseBranch"]?.stringValue)
+            assertEquals("progress-1", m["progressId"]?.stringValue)
+            assertEquals("/repo", m["cwd"]?.stringValue)
+            assertEquals("created", result.pullRequest?.status)
+            assertEquals(9, result.pullRequest?.number)
         }
 
     @Test
@@ -464,6 +508,14 @@ private class GitActionsFakeRepository(
         skillMentions: List<com.remodex.mobile.core.model.CodexTurnSkillMention>,
         fileMentions: List<com.remodex.mobile.core.model.CodexTurnMention>,
         collaborationMode: CodexCollaborationModeKind?,
+    ) = error("unused")
+    override suspend fun steerTurn(
+        threadId: String,
+        expectedTurnId: String,
+        text: String,
+        attachments: List<CodexImageAttachment>,
+        skillMentions: List<CodexTurnSkillMention>,
+        fileMentions: List<CodexTurnMention>,
     ) = error("unused")
 
     override suspend fun interruptTurn(

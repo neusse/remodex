@@ -1,4 +1,4 @@
-﻿package com.remodex.mobile.ui.turn
+package com.remodex.mobile.ui.turn
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -8,22 +8,30 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -43,11 +51,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.composables.icons.lucide.R as LucideR
 import com.remodex.mobile.AppContainer
 import com.remodex.mobile.R
 import com.remodex.mobile.BuildConfig
@@ -85,9 +100,12 @@ import com.remodex.mobile.ui.LocalAIChangeSetPersistence
 import com.remodex.mobile.ui.agent.MessageList
 import com.remodex.mobile.ui.home.RootReconnectRecoveryAction
 import com.remodex.mobile.ui.home.RootReconnectUiState
+import com.remodex.mobile.ui.theme.AgentLightColors
 import com.remodex.mobile.ui.theme.RemodexModalBottomSheet
+import com.remodex.mobile.ui.theme.RemodexPopupChrome
 import com.remodex.mobile.services.CodexLookupService
 import com.remodex.mobile.services.isPluginListUnsupported
+import com.remodex.mobile.ui.theme.isAgentLightChrome
 import com.remodex.mobile.core.voice.BridgeVoiceRecorder
 import com.remodex.mobile.core.voice.VoiceDraftAppend
 import java.io.ByteArrayOutputStream
@@ -113,7 +131,21 @@ private const val STARTUP_TRACE_TAG = "RemodexStartup"
 private const val SMART_SCROLL_FADE_JUMP_DISTANCE_ITEMS = 24
 private const val BETA_LONG_THREAD_MESSAGE_THRESHOLD = 18
 private const val BETA_LONG_THREAD_SCROLL_DISTANCE_ITEMS = 6
-private val TurnConversationMessageListTopPadding = 112.dp
+private val TurnConversationMessageListTopPadding = 84.dp
+private val TurnConversationMessageListBottomPadding = 200.dp
+private val TurnConversationSmartScrollBottomPadding = 172.dp
+private val TurnConversationComposerBottomLift = 20.dp
+
+private data class PendingSteerDraft(
+    val id: String = UUID.randomUUID().toString(),
+    val draftText: String,
+    val wireText: String,
+    val attachments: List<CodexImageAttachment>,
+    val skillMentions: List<com.remodex.mobile.core.model.CodexTurnSkillMention>,
+    val fileMentions: List<com.remodex.mobile.core.model.CodexTurnMention>,
+    val mentionChips: List<ComposerMentionChipPayload>,
+    val composerAttachments: List<TurnComposerAttachment>,
+)
 /** Shaves a few dp off IME bottom padding so the composer sits slightly closer to the keyboard. */
 
 /**
@@ -157,11 +189,13 @@ fun TurnConversationPane(
     var sending by remember(threadId) { mutableStateOf(false) }
     var lastError by remember(threadId) { mutableStateOf<String?>(null) }
     var draft by rememberSaveable(threadId) { mutableStateOf("") }
-    var isPlanModeEnabled by rememberSaveable(threadId) { mutableStateOf(false) }
+    var pendingPlanModeEnabled by remember(threadId) { mutableStateOf<Boolean?>(null) }
     var hiddenPlanAccessoryMessageIds by rememberSaveable(threadId) { mutableStateOf<List<String>>(emptyList()) }
     var closedPlanAccessoryMessageIds by rememberSaveable(threadId) { mutableStateOf<List<String>>(emptyList()) }
     var composerAttachments by remember(threadId) { mutableStateOf<List<TurnComposerAttachment>>(emptyList()) }
     var mentionChips by remember(threadId) { mutableStateOf<List<ComposerMentionChipPayload>>(emptyList()) }
+    var pendingSteerDrafts by remember(threadId) { mutableStateOf<List<PendingSteerDraft>>(emptyList()) }
+    var editingSteerDraftId by remember(threadId) { mutableStateOf<String?>(null) }
     var availableSkills by remember(threadId) { mutableStateOf<List<SkillAutocompleteSuggestion>>(emptyList()) }
     var availablePlugins by remember(threadId) { mutableStateOf<List<CodexPluginMetadata>>(emptyList()) }
     var pluginAutocompleteLoading by remember(threadId) { mutableStateOf(false) }
@@ -205,6 +239,25 @@ fun TurnConversationPane(
         remember(threadId, threads) {
             threads.firstOrNull { it.id == threadId }
         }
+    val conversationBackground = MaterialTheme.colorScheme.background
+    val persistedPlanModeEnabled = activeThread?.collaborationMode == CodexCollaborationModeKind.plan
+    val isPlanModeEnabled = pendingPlanModeEnabled ?: persistedPlanModeEnabled
+    fun setPlanModeEnabled(enabled: Boolean) {
+        pendingPlanModeEnabled = enabled
+        scope.launch {
+            runCatching {
+                repository.setThreadCollaborationMode(
+                    threadId = threadId,
+                    mode = if (enabled) CodexCollaborationModeKind.plan else CodexCollaborationModeKind.default,
+                )
+            }.onFailure {
+                pendingPlanModeEnabled = null
+            }
+        }
+    }
+    LaunchedEffect(threadId, persistedPlanModeEnabled) {
+        pendingPlanModeEnabled = null
+    }
     val gitCwd =
         remember(activeThread) {
             activeThread.gitWorkingDirectoryForGitActions()
@@ -381,7 +434,7 @@ fun TurnConversationPane(
             )
         draft = reviewDraftText(target, reviewBaseBranch)
         mentionChips = emptyList()
-        isPlanModeEnabled = false
+        setPlanModeEnabled(false)
         lastError = null
     }
 
@@ -449,7 +502,7 @@ fun TurnConversationPane(
             lastError = planApplyRequiresEmptyMessage
         } else {
             draft = "Implement plan."
-            isPlanModeEnabled = false
+            setPlanModeEnabled(false)
             mentionChips = emptyList()
         }
     }
@@ -1132,6 +1185,9 @@ fun TurnConversationPane(
                     draft = ""
                     composerAttachments = emptyList()
                     mentionChips = emptyList()
+                    if (collaborationMode == CodexCollaborationModeKind.plan) {
+                        setPlanModeEnabled(false)
+                    }
                 }.onFailure { e ->
                     lastError = com.remodex.mobile.ui.turn.formatTurnSendError(e)
                 }
@@ -1183,6 +1239,9 @@ fun TurnConversationPane(
                         draft = ""
                         composerAttachments = emptyList()
                         mentionChips = emptyList()
+                        if (collaborationMode == CodexCollaborationModeKind.plan) {
+                            setPlanModeEnabled(false)
+                        }
                     }
                 }
                 .onFailure { e ->
@@ -1207,6 +1266,87 @@ fun TurnConversationPane(
         }
     }
 
+    fun stageCurrentDraftForSteering() {
+        val draftText =
+            com.remodex.mobile.ui.turn.appendFileAttachmentsToDraft(
+                baseText = draftWithMentions,
+                files = readyComposerFileAttachments,
+                binarySummary = attachmentFileBinarySummary,
+            )
+        if (draftText.trim().isEmpty() &&
+            readyComposerImageAttachments.isEmpty() &&
+            structuredSkillMentions.isEmpty() &&
+            structuredFileMentions.isEmpty()
+        ) return
+        val next =
+            PendingSteerDraft(
+                draftText = draft,
+                wireText = draftText,
+                attachments = readyComposerImageAttachments,
+                skillMentions = structuredSkillMentions,
+                fileMentions = structuredFileMentions,
+                mentionChips = mentionChips,
+                composerAttachments = composerAttachments,
+            )
+        val editingId = editingSteerDraftId
+        pendingSteerDrafts =
+            if (editingId != null && pendingSteerDrafts.any { it.id == editingId }) {
+                pendingSteerDrafts.map { queued ->
+                    if (queued.id == editingId) next.copy(id = editingId) else queued
+                }
+            } else {
+                pendingSteerDrafts + next
+            }
+        editingSteerDraftId = null
+        draft = ""
+        composerAttachments = emptyList()
+        mentionChips = emptyList()
+    }
+
+    fun sendPendingSteerDraft(pending: PendingSteerDraft) {
+        if (sending) return
+        val expectedTurnId = activeTurnId
+        val sendAsSteer = isThreadRunning && expectedTurnId != null
+        scope.launch {
+            runCatching {
+                if (sendAsSteer) {
+                    repository.steerTurn(
+                        threadId = threadId,
+                        expectedTurnId = expectedTurnId,
+                        text = pending.wireText,
+                        attachments = pending.attachments,
+                        skillMentions = pending.skillMentions,
+                        fileMentions = pending.fileMentions,
+                    )
+                } else {
+                    sending = true
+                    repository.startTurn(
+                        threadId = threadId,
+                        text = pending.wireText,
+                        attachments = pending.attachments,
+                        skillMentions = pending.skillMentions,
+                        fileMentions = pending.fileMentions,
+                    )
+                }
+            }.onSuccess {
+                pendingSteerDrafts = pendingSteerDrafts.filterNot { it.id == pending.id }
+                if (editingSteerDraftId == pending.id) {
+                    editingSteerDraftId = null
+                }
+                AppContainer.betaEngagementRepository.recordMissionEvent(
+                    eventType = "turn_steered",
+                    screen = "composer",
+                )
+            }.onFailure { e ->
+                lastError = com.remodex.mobile.ui.turn.formatTurnSendError(e)
+            }.also {
+                if (!sendAsSteer) {
+                    sending = false
+                }
+            }
+        }
+    }
+
     fun stopActiveTurn() {
         scope.launch {
             runCatching {
@@ -1220,8 +1360,26 @@ fun TurnConversationPane(
         }
     }
 
-    LaunchedEffect(threadId, isThreadRunning, sending, queuedDraftCount, hasComposerDraftContent) {
-        if (isThreadRunning || sending || queuedDraftCount <= 0 || hasComposerDraftContent) return@LaunchedEffect
+    var wasThreadRunningForSteerQueue by remember(threadId) { mutableStateOf(false) }
+    LaunchedEffect(threadId, isThreadRunning, sending) {
+        if (isThreadRunning) {
+            wasThreadRunningForSteerQueue = true
+        } else if (wasThreadRunningForSteerQueue && !sending) {
+            wasThreadRunningForSteerQueue = false
+            pendingSteerDrafts.firstOrNull()?.let { pending ->
+                sendPendingSteerDraft(pending)
+            }
+        }
+    }
+
+    LaunchedEffect(threadId, isThreadRunning, sending, queuedDraftCount, hasComposerDraftContent, pendingSteerDrafts.size) {
+        if (
+            isThreadRunning ||
+            sending ||
+            pendingSteerDrafts.isNotEmpty() ||
+            queuedDraftCount <= 0 ||
+            hasComposerDraftContent
+        ) return@LaunchedEffect
         val queued = runCatching { repository.pollTurnDraft(threadId) }.getOrNull() ?: return@LaunchedEffect
         dispatchTurn(
             text = queued.text,
@@ -1234,14 +1392,14 @@ fun TurnConversationPane(
     }
 
     val imeBottomInset = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-    val navigationBottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val isImeVisible = imeBottomInset > navigationBottomInset
+    val isImeVisible = imeBottomInset > 0.dp
     Box(
         modifier =
             modifier
                 .fillMaxSize()
+                .background(conversationBackground)
     ) {
-        Column(
+        Box(
             modifier =
                 Modifier
                     .fillMaxSize()
@@ -1250,8 +1408,7 @@ fun TurnConversationPane(
             Box(
                 modifier =
                     Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxSize(),
             ) {
                 MessageList(
                     messages = visibleMessages,
@@ -1262,7 +1419,18 @@ fun TurnConversationPane(
                         planDetailsMessage = it
                         showPlanDetailsSheet = true
                         lastError = null
+                        scope.launch {
+                            AppContainer.betaEngagementRepository.recordMissionEvent(
+                                eventType = "plan_rendering_checked",
+                                screen = "conversation",
+                                refreshAfter = false,
+                            )
+                        }
                     },
+                    onApplyPlan = {
+                        applyPlanToComposer()
+                    },
+                    canApplyPlan = !isThreadRunning && !sending,
                     isAssistantTurnActive = isThreadRunning,
                     activeTurnId = activeTurnId,
                     hiddenEarlierCount = hiddenEarlierCount,
@@ -1272,7 +1440,7 @@ fun TurnConversationPane(
                     contentPadding =
                         PaddingValues(
                             top = TurnConversationMessageListTopPadding,
-                            bottom = 18.dp,
+                            bottom = TurnConversationMessageListBottomPadding,
                             start = 2.dp,
                             end = 2.dp,
                         ),
@@ -1403,9 +1571,17 @@ fun TurnConversationPane(
                     modifier =
                         Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(bottom = 14.dp),
+                            .padding(bottom = TurnConversationSmartScrollBottomPadding),
                 )
             }
+            Column(
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .zIndex(1f)
+                        .padding(bottom = TurnConversationComposerBottomLift),
+            ) {
         lastError?.let { err ->
             Text(
                 text = err,
@@ -1514,29 +1690,6 @@ fun TurnConversationPane(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
             )
         }
-        visiblePlanAccessoryMessage?.let { planMessage ->
-            TurnPlanBar(
-                message = planMessage,
-                onOpenDetails = {
-                    planDetailsMessage = planMessage
-                    showPlanDetailsSheet = true
-                    lastError = null
-                },
-                onHide = {
-                    hiddenPlanAccessoryMessageIds =
-                        (hiddenPlanAccessoryMessageIds + planMessage.id).distinct()
-                    planDetailsMessage = null
-                    showPlanDetailsSheet = false
-                },
-                onClose = {
-                    closedPlanAccessoryMessageIds =
-                        (closedPlanAccessoryMessageIds + planMessage.id).distinct()
-                    planDetailsMessage = null
-                    showPlanDetailsSheet = false
-                },
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-            )
-        }
         val onGitCheckout: (String) -> Unit =
             checkout@{ selectedBranch ->
             val cwd = gitCwd
@@ -1638,14 +1791,43 @@ fun TurnConversationPane(
                     isSwitchingGitBranch = false
                 }
             }
-        TurnComposerBar(
-            draft = draft,
-            attachments = composerAttachments,
-            model = composerModel,
-            isPlanModeEnabled = isPlanModeEnabled,
-            runtimeControls = runtimeControls,
-            mentionChips = mentionChips,
-            autocomplete = autocompleteState,
+        val pendingSteers = pendingSteerDrafts
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (pendingSteers.isNotEmpty()) {
+                    PendingSteerDraftQueue(
+                        pendingDrafts = pendingSteers,
+                        onSteer = { pending -> sendPendingSteerDraft(pending) },
+                        onEdit = { pending ->
+                            editingSteerDraftId = pending.id
+                            draft = pending.draftText
+                            mentionChips = pending.mentionChips
+                            composerAttachments = pending.composerAttachments
+                        },
+                        onDelete = { pending ->
+                            pendingSteerDrafts = pendingSteerDrafts.filterNot { it.id == pending.id }
+                            if (editingSteerDraftId == pending.id) {
+                                editingSteerDraftId = null
+                            }
+                        },
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                TurnComposerBar(
+                    draft = draft,
+                    attachments = composerAttachments,
+                    model = composerModel,
+                    isPlanModeEnabled = isPlanModeEnabled,
+                    runtimeControls = runtimeControls,
+                    mentionChips = mentionChips,
+                    autocomplete = autocompleteState,
+                    modifier = Modifier.fillMaxWidth(),
             onDraftChange = { next ->
                 draft = next
                 val target = reviewTarget
@@ -1699,7 +1881,7 @@ fun TurnConversationPane(
                     cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                 }
             },
-            onSetPlanModeEnabled = { isPlanModeEnabled = it },
+            onSetPlanModeEnabled = { setPlanModeEnabled(it) },
             onSelectModel = { option ->
                 scope.launch { runCatching { repository.setSelectedModelId(option.id) } }
             },
@@ -1878,7 +2060,7 @@ fun TurnConversationPane(
                 }
             },
             composerEnvironment = {
-                if (!isImeVisible || isBranchPickerOpen) {
+                if (pendingSteers.isEmpty() && (!isImeVisible || isBranchPickerOpen)) {
                     TurnComposerSecondaryBar(
                         threadId = threadId,
                         repository = repository,
@@ -1931,6 +2113,10 @@ fun TurnConversationPane(
                 voicePhase = TurnVoicePhase.Idle
                 resetVoiceMeteringState()
                 lastError = null
+                if (isThreadRunning) {
+                    stageCurrentDraftForSteering()
+                    return@TurnComposerBar
+                }
                 val activeReviewTarget = reviewTarget
                 if (activeReviewTarget != null) {
                     if (isThreadRunning) {
@@ -1992,7 +2178,9 @@ fun TurnConversationPane(
                     fromQueue = false,
                 )
             },
-        )
+                )
+            }
+        }
         }
     }
     com.remodex.mobile.ui.turn.ForkThreadActionSheet(
@@ -2065,6 +2253,7 @@ fun TurnConversationPane(
         onDismiss = { fullTimelineMessage = null },
     )
 }
+}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -2096,6 +2285,141 @@ private fun FullTimelineMessageSheet(
                 contentColor = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.fillMaxWidth(),
                 keyPrefix = "full-${message.id}",
+            )
+        }
+    }
+}
+
+@Composable
+private fun PendingSteerDraftQueue(
+    pendingDrafts: List<PendingSteerDraft>,
+    onSteer: (PendingSteerDraft) -> Unit,
+    onEdit: (PendingSteerDraft) -> Unit,
+    onDelete: (PendingSteerDraft) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val lightChrome = isAgentLightChrome()
+    val shape = RoundedCornerShape(28.dp)
+    val surfaceColor = RemodexPopupChrome.surfaceColor()
+    val iconTint =
+        if (lightChrome) {
+            AgentLightColors.IconMuted
+        } else {
+            colors.onSurfaceVariant
+        }
+    val textTint =
+        if (lightChrome) {
+            AgentLightColors.TextSecondary
+        } else {
+            colors.onSurfaceVariant
+        }
+    Surface(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .heightIn(
+                    min = if (pendingDrafts.size <= 1) 44.dp else 46.dp,
+                    max = if (pendingDrafts.size <= 1) 52.dp else 92.dp,
+                )
+                .shadow(
+                    elevation = if (lightChrome) 8.dp else 2.dp,
+                    shape = shape,
+                    ambientColor = Color.Black.copy(alpha = if (lightChrome) 0.05f else 0.10f),
+                    spotColor = Color.Black.copy(alpha = if (lightChrome) 0.05f else 0.10f),
+                ),
+        shape = shape,
+        color = surfaceColor,
+        border = RemodexPopupChrome.borderStroke(),
+        tonalElevation = 0.dp,
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(
+                        start = 20.dp,
+                        end = 14.dp,
+                        top = if (pendingDrafts.size <= 1) 6.dp else 8.dp,
+                        bottom = if (pendingDrafts.size <= 1) 6.dp else 8.dp,
+                    ),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            pendingDrafts.forEach { pending ->
+                PendingSteerDraftQueueRow(
+                    pending = pending,
+                    textTint = textTint,
+                    iconTint = iconTint,
+                    onSteer = { onSteer(pending) },
+                    onEdit = { onEdit(pending) },
+                    onDelete = { onDelete(pending) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PendingSteerDraftQueueRow(
+    pending: PendingSteerDraft,
+    textTint: Color,
+    iconTint: Color,
+    onSteer: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(36.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = pending.draftText.ifBlank { stringResource(R.string.turn_queue_item_empty) },
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = textTint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        TextButton(
+            onClick = onEdit,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            modifier =
+                Modifier
+                    .heightIn(min = 26.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+        ) {
+            Text(
+                text = "...",
+                color = colors.onSurface,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+        IconButton(
+            onClick = onSteer,
+            modifier = Modifier.size(28.dp),
+        ) {
+            Icon(
+                painter = painterResource(LucideR.drawable.lucide_ic_send_horizontal),
+                contentDescription = stringResource(R.string.turn_steer_cd),
+                modifier = Modifier.size(17.dp),
+                tint = iconTint,
+            )
+        }
+        IconButton(
+            onClick = onDelete,
+            modifier = Modifier.size(28.dp),
+        ) {
+            Icon(
+                painter = painterResource(LucideR.drawable.lucide_ic_trash_2),
+                contentDescription = stringResource(R.string.turn_steer_delete_cd),
+                modifier = Modifier.size(17.dp),
+                tint = iconTint,
             )
         }
     }

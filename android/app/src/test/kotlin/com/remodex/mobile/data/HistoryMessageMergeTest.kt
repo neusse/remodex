@@ -553,6 +553,107 @@ class HistoryMessageMergeTest {
         assertEquals(listOf("command-1", "command-2"), merged.map { it.id })
     }
 
+    @Test
+    fun merge_reordersExistingSameTurnRowsToHistoryItemOrder() {
+        val existing =
+            listOf(
+                message(
+                    id = "assistant-live",
+                    role = CodexMessageRole.assistant,
+                    kind = CodexMessageKind.chat,
+                    text = "answer",
+                    turnId = "turn-1",
+                    itemId = "assistant-1",
+                    isStreaming = false,
+                    createdAt = Instant.parse("2024-01-01T00:00:10Z"),
+                ),
+                message(
+                    id = "user-live",
+                    role = CodexMessageRole.user,
+                    kind = CodexMessageKind.chat,
+                    text = "prompt",
+                    turnId = "turn-1",
+                    itemId = "user-1",
+                    isStreaming = false,
+                    createdAt = Instant.parse("2024-01-01T00:00:11Z"),
+                ),
+            )
+        val incoming =
+            listOf(
+                message(
+                    id = "user-history",
+                    role = CodexMessageRole.user,
+                    kind = CodexMessageKind.chat,
+                    text = "prompt",
+                    turnId = "turn-1",
+                    itemId = "user-1",
+                    isStreaming = false,
+                    createdAt = Instant.parse("2024-01-01T00:00:01Z"),
+                ),
+                message(
+                    id = "assistant-history",
+                    role = CodexMessageRole.assistant,
+                    kind = CodexMessageKind.chat,
+                    text = "answer",
+                    turnId = "turn-1",
+                    itemId = "assistant-1",
+                    isStreaming = false,
+                    createdAt = Instant.parse("2024-01-01T00:00:02Z"),
+                ),
+            )
+
+        val merged = HistoryMessageMerge.merge(existing, incoming)
+
+        assertEquals(listOf("user-live", "assistant-live"), merged.map { it.id })
+        assertEquals(listOf("prompt", "answer"), merged.map { it.text })
+    }
+
+    @Test
+    fun merge_midDesktopTurnUsesHistoryOrderAndAbsorbsStreamingAssistant() {
+        val existing =
+            listOf(
+                message(
+                    id = "assistant-live",
+                    role = CodexMessageRole.assistant,
+                    kind = CodexMessageKind.chat,
+                    text = "partial ans",
+                    turnId = "turn-1",
+                    itemId = "assistant-live-temp",
+                    isStreaming = true,
+                    createdAt = Instant.parse("2024-01-01T00:00:10Z"),
+                ),
+            )
+        val incoming =
+            listOf(
+                message(
+                    id = "user-history",
+                    role = CodexMessageRole.user,
+                    kind = CodexMessageKind.chat,
+                    text = "prompt from desktop",
+                    turnId = "turn-1",
+                    itemId = "user-1",
+                    isStreaming = false,
+                    createdAt = Instant.parse("2024-01-01T00:00:01Z"),
+                ),
+                message(
+                    id = "assistant-history",
+                    role = CodexMessageRole.assistant,
+                    kind = CodexMessageKind.chat,
+                    text = "partial answer from desktop",
+                    turnId = "turn-1",
+                    itemId = "assistant-1",
+                    isStreaming = false,
+                    createdAt = Instant.parse("2024-01-01T00:00:02Z"),
+                ),
+            )
+
+        val merged = HistoryMessageMerge.merge(existing, incoming)
+
+        assertEquals(listOf(CodexMessageRole.user, CodexMessageRole.assistant), merged.map { it.role })
+        assertEquals(listOf("prompt from desktop", "partial answer from desktop"), merged.map { it.text })
+        assertEquals(listOf("user-1", "assistant-1"), merged.map { it.itemId })
+    }
+
     private fun message(
         id: String,
         role: CodexMessageRole = CodexMessageRole.system,

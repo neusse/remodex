@@ -501,6 +501,50 @@ class TimelineMessageGroupingTest {
     }
 
     @Test
+    fun planRows_stayInTimeline_whenAssistantWorkWouldCollapse() {
+        val user =
+            CodexMessage(
+                id = "prompt",
+                threadId = "t1",
+                role = CodexMessageRole.user,
+                kind = CodexMessageKind.chat,
+                text = "prompt",
+                createdAt = t0,
+                turnId = "turn-1",
+            )
+        fun assistant(id: String, seconds: Long): CodexMessage =
+            CodexMessage(
+                id = id,
+                threadId = "t1",
+                role = CodexMessageRole.assistant,
+                kind = CodexMessageKind.chat,
+                text = id,
+                createdAt = t0.plusSeconds(seconds),
+                turnId = "turn-1",
+            )
+
+        val items =
+            listOf(
+                user,
+                plan("plan-mid"),
+                assistant("step-1", 1),
+                assistant("summary", 20),
+            ).toTimelineListItems()
+
+        assertEquals(4, items.size)
+        assertIs<TimelineListItem.Single>(items[0]).also { assertEquals("prompt", it.message.id) }
+        assertIs<TimelineListItem.Single>(items[1]).also {
+            assertEquals("plan-mid", it.message.id)
+            assertEquals(CodexMessageKind.plan, it.message.kind)
+        }
+        assertIs<TimelineListItem.AssistantWorkGroup>(items[2]).also {
+            assertEquals(listOf("step-1"), it.messages.map { message -> message.id })
+            assertTrue(it.messages.none { message -> message.kind == CodexMessageKind.plan })
+        }
+        assertIs<TimelineListItem.Single>(items[3]).also { assertEquals("summary", it.message.id) }
+    }
+
+    @Test
     fun transientActivityStatus_hidesWhileAssistantTextStreams() {
         val streaming =
             CodexMessage(
@@ -552,6 +596,20 @@ class TimelineMessageGroupingTest {
         assertEquals(
             "editing MainShell.kt...",
             listOf(edit).deriveTransientActivityStatus(true, "turn-1"),
+        )
+    }
+
+    @Test
+    fun transientActivityStatus_derivesSearchState() {
+        val search =
+            cmd("search").copy(
+                text = "running > rg citation android",
+                turnId = "turn-1",
+            )
+
+        assertEquals(
+            "searching...",
+            listOf(search).deriveTransientActivityStatus(true, "turn-1"),
         )
     }
 }

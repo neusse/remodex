@@ -16,16 +16,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,8 +36,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.composables.icons.lucide.R as LucideR
+import com.remodex.mobile.ui.theme.RemodexModalBottomSheet
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DesignExportSheet(
     visible: Boolean,
@@ -55,9 +52,8 @@ fun DesignExportSheet(
     var selectedTarget by remember { mutableStateOf(ExportTarget.JETPACK_COMPOSE) }
     val clipboard = LocalClipboardManager.current
 
-    ModalBottomSheet(
+    RemodexModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(),
     ) {
         Column(
             modifier = Modifier

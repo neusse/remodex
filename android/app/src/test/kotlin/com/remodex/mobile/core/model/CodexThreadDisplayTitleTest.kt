@@ -3,6 +3,7 @@ package com.remodex.mobile.core.model
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -72,5 +73,18 @@ class CodexThreadDisplayTitleTest {
         assertNull(CodexThread.normalizeIdentifier("null"))
         assertNull(CodexThread.normalizeIdentifier("  undefined  "))
         assertEquals("real", CodexThread.normalizeIdentifier("real"))
+    }
+
+    @Test
+    fun fromJsonObject_decodesCollaborationModeObject() {
+        val obj =
+            buildJsonObject {
+                put("id", JsonPrimitive("tid"))
+                putJsonObject("collaborationMode") {
+                    put("mode", JsonPrimitive("plan"))
+                }
+            }
+        val decoded = CodexThread.fromJsonObject(obj)
+        assertEquals(CodexCollaborationModeKind.plan, decoded.collaborationMode)
     }
 }

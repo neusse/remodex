@@ -87,4 +87,17 @@ class TurnComposerToolbarActionsBuilderTest {
         assertFalse(actions.sendShowsProgress)
         assertFalse(actions.sendButtonEnabled)
     }
+
+    @Test
+    fun build_threadRunning_withPayload_swapsStopForSend() {
+        val actions =
+            TurnComposerToolbarActionsBuilder.build(
+                TurnComposerModel(
+                    threadRunning = true,
+                    draftText = "redirect this",
+                ),
+            )
+        assertFalse(actions.stopButtonVisible)
+        assertTrue(actions.sendButtonEnabled)
+    }
 }

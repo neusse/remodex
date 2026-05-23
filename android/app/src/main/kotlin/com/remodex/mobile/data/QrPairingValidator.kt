@@ -12,9 +12,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.HttpUrl
 import java.util.Base64
 
 private val pairingJson =
@@ -27,6 +27,8 @@ private const val QR_SCANNER_BRIDGE_UPDATE_COMMAND = "npm install -g remodex@lat
 private val pairingJsonMediaType = "application/json; charset=utf-8".toMediaType()
 private const val MAX_PAIRING_FIELD_LENGTH = 256
 private const val ED25519_PUBLIC_KEY_BYTES = 32
+private const val QR_SCANNER_PAIRING_CODE_PREFIX = "RMX1:"
+private val qrScannerShortCodeRegex = Regex("^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8,12}$")
 private val pairingIdRegex = Regex("^[A-Za-z0-9._:-]{1,$MAX_PAIRING_FIELD_LENGTH}$")
 
 @Serializable
@@ -51,6 +53,10 @@ sealed class QrPairingValidationResult {
         val payload: CodexPairingQRPayload,
     ) : QrPairingValidationResult()
 
+    data class ShortCode(
+        val code: String,
+    ) : QrPairingValidationResult()
+
     data class ScanError(
         val message: String,
     ) : QrPairingValidationResult()
@@ -70,9 +76,24 @@ fun validatePairingQrCode(
     nowEpochMillis: Long = System.currentTimeMillis(),
 ): QrPairingValidationResult {
     val trimmed = code.trim()
+    val normalizedShortCode = normalizeShortPairingCode(trimmed)
+    if (qrScannerShortCodeRegex.matches(normalizedShortCode)) {
+        return QrPairingValidationResult.ShortCode(normalizedShortCode)
+    }
+
+    val normalizedCode =
+        if (trimmed.startsWith(QR_SCANNER_PAIRING_CODE_PREFIX)) {
+            decodePasteablePairingCode(trimmed)
+                ?: return QrPairingValidationResult.ScanError(
+                    "This pairing code is unreadable. Copy it again from the computer bridge.",
+                )
+        } else {
+            trimmed
+        }
+
     val payload =
         runCatching {
-            pairingJson.decodeFromString<CodexPairingQRPayload>(trimmed)
+            pairingJson.decodeFromString<CodexPairingQRPayload>(normalizedCode)
         }.getOrNull()
 
     if (payload != null) {
@@ -86,7 +107,7 @@ fun validatePairingQrCode(
         }
         if (payload.relay.trim().isEmpty()) {
             return QrPairingValidationResult.ScanError(
-                "QR code is missing the relay URL. Re-generate the code from the bridge.",
+                "QR code is missing pairing route metadata. Re-generate the code from the bridge.",
             )
         }
         if (payload.sessionId.trim().isEmpty()) {
@@ -109,7 +130,7 @@ fun validatePairingQrCode(
         return QrPairingValidationResult.Success(payload)
     }
 
-    if (looksLikeRemodexPairingPayload(trimmed)) {
+    if (looksLikeRemodexPairingPayload(normalizedCode)) {
         return QrPairingValidationResult.BridgeUpdateRequired(
             title = "Update Remodex on your Mac before scanning",
             message =
@@ -130,24 +151,23 @@ suspend fun resolvePairingCode(
     nowEpochMillis: Long = System.currentTimeMillis(),
 ): QrPairingValidationResult =
     withContext(Dispatchers.IO) {
-        val trimmedCode = code.trim()
-        if (trimmedCode.isEmpty()) {
+        val normalizedCode = normalizeShortPairingCode(code)
+        if (normalizedCode.isEmpty()) {
             return@withContext QrPairingValidationResult.ScanError("Enter the pairing code from your desktop.")
         }
 
-        val relayRoot =
-            relayHttpRootUrl(relayUrl)
+        val endpoint =
+            pairingCodeResolveRoute(relayUrl)
                 ?: return@withContext QrPairingValidationResult.ScanError(
-                    "Enter the relay URL shown on your desktop, for example ws://192.168.1.5:9000/relay.",
+                    "Pairing code resolver is unavailable. Scan the QR once, then try code pairing again.",
                 )
-        val endpoint = relayRoot.newBuilder().encodedPath("/v1/pairing/code/resolve").build()
         val body =
             pairingJson
-                .encodeToString(PairingCodeResolveRequest(trimmedCode))
+                .encodeToString(PairingCodeResolveRequest(normalizedCode))
                 .toRequestBody(pairingJsonMediaType)
         val request =
             Request.Builder()
-                .url(endpoint)
+                .url(endpoint.resolveUrl)
                 .post(body)
                 .build()
 
@@ -160,8 +180,23 @@ suspend fun resolvePairingCode(
                     }.getOrNull()
 
                 if (!response.isSuccessful || decoded?.ok != true) {
+                    if (decoded?.code == "pairing_code_expired") {
+                        return@withContext QrPairingValidationResult.ScanError(
+                            "This pairing code has expired. Generate a new one from the desktop bridge.",
+                        )
+                    }
+                    if (decoded?.code == "pairing_code_unavailable") {
+                        return@withContext QrPairingValidationResult.ScanError(
+                            "That pairing code is not available right now. Make sure your desktop bridge is running and try again.",
+                        )
+                    }
+                    if (response.code == 404) {
+                        return@withContext QrPairingValidationResult.ScanError(
+                            "This relay does not support pairing codes yet. Scan the QR code instead.",
+                        )
+                    }
                     return@withContext QrPairingValidationResult.ScanError(
-                        decoded?.error ?: "Pairing code unavailable. Check the code and relay URL.",
+                        decoded?.error ?: "Pairing code unavailable. Generate a fresh code from your desktop.",
                     )
                 }
 
@@ -189,7 +224,7 @@ suspend fun resolvePairingCode(
                         "The relay returned incomplete pairing metadata. Generate a new code from the desktop bridge.",
                     )
                 }
-                val resolvedRelay = relayPayloadUrl(relayRoot)
+                val resolvedRelay = endpoint.relayUrl
                 validatePairingFields(
                     relay = resolvedRelay,
                     sessionId = sessionId,
@@ -217,10 +252,17 @@ suspend fun resolvePairingCode(
             }
         }.getOrElse { error ->
             QrPairingValidationResult.ScanError(
-                error.message ?: "Could not reach the relay. Check that your phone and desktop are on the same network.",
+                error.message ?: "Could not reach the relay for this pairing code. Try again or scan the QR code.",
             )
         }
     }
+
+fun normalizeShortPairingCode(code: String): String =
+    code
+        .trim()
+        .uppercase()
+        .replace("-", "")
+        .replace(" ", "")
 
 private fun looksLikeRemodexPairingPayload(raw: String): Boolean {
     val obj =
@@ -268,7 +310,7 @@ private fun validatePairingFields(
     }
     if (validateRelayUrl(relay, requireWebSocketScheme = true) == null) {
         return QrPairingValidationResult.ScanError(
-            "Pairing metadata has an invalid or insecure relay URL. Use a local relay or a secure wss:// relay.",
+            "Pairing metadata has an invalid or insecure connection route. Use a local or secure route.",
         )
     }
     return null
@@ -277,20 +319,39 @@ private fun validatePairingFields(
 private fun containsUnsafePairingChars(value: String): Boolean =
     value.any { it.isISOControl() || it.isWhitespace() }
 
-private fun relayHttpRootUrl(rawRelayUrl: String): HttpUrl? {
+private data class PairingCodeResolveRoute(
+    val resolveUrl: HttpUrl,
+    val relayUrl: String,
+)
+
+private fun pairingCodeResolveRoute(rawRelayUrl: String): PairingCodeResolveRoute? {
     val validation = validateRelayUrl(rawRelayUrl) ?: return null
-    return validation.httpUrl.newBuilder()
-        .encodedPath("/")
+    val pathSegments = validation.httpUrl.pathSegments.filter { it.isNotEmpty() }
+    val resolveSegments =
+        if (pathSegments.lastOrNull() == "relay") {
+            pathSegments.dropLast(1) + listOf("v1", "pairing", "code", "resolve")
+        } else {
+            listOf("v1", "pairing", "code", "resolve")
+        }
+    val resolveUrl =
+        validation.httpUrl.newBuilder()
+        .encodedPath("/" + resolveSegments.joinToString("/"))
         .query(null)
         .fragment(null)
         .build()
+    return PairingCodeResolveRoute(resolveUrl = resolveUrl, relayUrl = validation.websocketUrl)
 }
 
-private fun relayPayloadUrl(relayRoot: HttpUrl): String {
-    val relayHttpUrl = relayRoot.newBuilder().encodedPath("/relay").build().toString()
-    return when {
-        relayHttpUrl.startsWith("https://", ignoreCase = true) -> "wss://${relayHttpUrl.substring(8)}"
-        relayHttpUrl.startsWith("http://", ignoreCase = true) -> "ws://${relayHttpUrl.substring(7)}"
-        else -> relayHttpUrl
-    }
+private fun decodePasteablePairingCode(code: String): String? {
+    val encoded =
+        code
+            .drop(QR_SCANNER_PAIRING_CODE_PREFIX.length)
+            .replace("-", "+")
+            .replace("_", "/")
+    val padding = (4 - (encoded.length % 4)) % 4
+    val padded = encoded + "=".repeat(padding)
+    val decoded =
+        runCatching { Base64.getDecoder().decode(padded) }.getOrNull()
+            ?: return null
+    return decoded.toString(Charsets.UTF_8)
 }

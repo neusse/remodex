@@ -12,8 +12,18 @@ fun AssistantMessageBlock(
     message: CodexMessage,
     modifier: Modifier = Modifier,
     onOpenFullMessage: ((CodexMessage) -> Unit)? = null,
+    onOpenPlanDetails: ((CodexMessage) -> Unit)? = null,
+    onApplyPlan: ((CodexMessage) -> Unit)? = null,
+    canApplyPlan: Boolean = true,
 ) {
     if (message.role == CodexMessageRole.assistant) {
-        TurnMessageRow(message = message, modifier = modifier, onOpenFullMessage = onOpenFullMessage)
+        TurnMessageRow(
+            message = message,
+            modifier = modifier,
+            onOpenFullMessage = onOpenFullMessage,
+            onOpenPlanDetails = onOpenPlanDetails,
+            onApplyPlan = onApplyPlan,
+            canApplyPlan = canApplyPlan,
+        )
     }
 }

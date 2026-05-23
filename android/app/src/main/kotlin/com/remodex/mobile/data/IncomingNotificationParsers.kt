@@ -2,6 +2,7 @@ package com.remodex.mobile.data
 
 import com.remodex.mobile.core.model.CodexThread
 import com.remodex.mobile.core.model.JSONValue
+import java.time.Instant
 
 /** Shared param extraction for Mac→phone notifications (iOS IncomingSupport patterns). */
 internal object IncomingNotificationParsers {
@@ -117,6 +118,7 @@ internal object IncomingNotificationParsers {
         }
         envelopeEvent(params)?.let { ev ->
             ev["turnId"]?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+            ev["turn_id"]?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
             ev["turn"]?.objectValue?.get("id")?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
             ev["item"]?.objectValue?.let { item ->
                 item["turnId"]?.stringValue?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
@@ -260,11 +262,36 @@ internal object IncomingNotificationParsers {
             params["message"]?.stringValue,
             params["text"]?.stringValue,
             envelopeEvent(params)?.get("message")?.stringValue,
+            envelopeEvent(params)?.get("text")?.stringValue,
         ).forEach { s ->
             s?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
         }
         return null
     }
+
+    fun extractCreatedAt(params: Map<String, JSONValue>?): Instant? {
+        if (params == null) return null
+        val ev = envelopeEvent(params)
+        listOf(
+            params["createdAt"]?.stringValue,
+            params["created_at"]?.stringValue,
+            params["timestamp"]?.stringValue,
+            ev?.get("createdAt")?.stringValue,
+            ev?.get("created_at")?.stringValue,
+            ev?.get("timestamp")?.stringValue,
+        ).forEach { raw ->
+            raw?.trim()?.takeIf { it.isNotEmpty() }?.let { candidate ->
+                parseInstant(candidate)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun parseInstant(raw: String): Instant? =
+        runCatching { Instant.parse(raw) }.getOrNull()
+            ?: runCatching {
+                java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME.parse(raw, Instant::from)
+            }.getOrNull()
 
     fun resolveThreadId(
         params: Map<String, JSONValue>?,

@@ -2,6 +2,7 @@ package com.remodex.mobile.core.persistence
 
 import android.content.Context
 import com.remodex.mobile.core.model.CODEX_SECURE_PROTOCOL_VERSION
+import com.remodex.mobile.core.model.CodexCollaborationModeKind
 import com.remodex.mobile.core.model.CodexPairingQRPayload
 import com.remodex.mobile.core.model.CodexThread
 import com.remodex.mobile.core.model.CodexThreadSyncState
@@ -320,6 +321,7 @@ class SessionPersistence(
                 thread.agentRole.orEmpty(),
                 thread.model.orEmpty(),
                 thread.modelProvider.orEmpty(),
+                thread.collaborationMode.name,
             )
         return fields.joinToString(MANAGED_WORKTREE_ENTRY_SEPARATOR) { urlEncode(it) }
     }
@@ -353,6 +355,10 @@ class SessionPersistence(
                 agentRole = CodexThread.normalizeIdentifier(parts.getOrNull(13)),
                 model = CodexThread.normalizeIdentifier(parts.getOrNull(14)),
                 modelProvider = CodexThread.normalizeIdentifier(parts.getOrNull(15)),
+                collaborationMode =
+                    parts.getOrNull(16)
+                        ?.let { raw -> runCatching { CodexCollaborationModeKind.valueOf(raw) }.getOrNull() }
+                        ?: CodexCollaborationModeKind.default,
             )
         return CachedThreadEntry(
             index = parts[0].toIntOrNull() ?: Int.MAX_VALUE,

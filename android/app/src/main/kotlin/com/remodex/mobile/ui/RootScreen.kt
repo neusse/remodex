@@ -7,7 +7,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.remodex.mobile.ui.home.RootPhase
 import com.remodex.mobile.ui.home.RootViewModel
-import com.remodex.mobile.ui.onboarding.OnboardingScreen
+import com.remodex.mobile.ui.onboarding.OnboardingFlow
 import com.remodex.mobile.ui.onboarding.QrScannerScreen
 import com.remodex.mobile.ui.shell.MainShell
 
@@ -23,8 +23,8 @@ fun RootScreen(modifier: Modifier = Modifier) {
 
     when (phase) {
         RootPhase.Onboarding ->
-            OnboardingScreen(
-                onContinue = viewModel::finishOnboarding,
+            OnboardingFlow(
+                onFinish = viewModel::finishOnboarding,
                 modifier = modifier,
             )
         RootPhase.PairingScan ->

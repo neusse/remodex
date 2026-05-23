@@ -127,6 +127,28 @@ interface AppConfig {
   relay_path: string | null;
   bridge_path: string | null;
   log_level: string;
+  provider_bridge: ProviderBridgeConfig;
+}
+
+interface ProviderBridgeConfig {
+  bind_host: string;
+  port: number;
+  provider: string;
+  default_model: string;
+}
+
+interface ProviderBridgeStatus {
+  running: boolean;
+  bind_host: string;
+  port: number;
+  base_url: string;
+  provider: string;
+}
+
+interface DeepSeekKeyStatus {
+  available: boolean;
+  source: "environment" | "stored" | "missing" | string;
+  has_stored_key: boolean;
 }
 
 const STATE_LABELS: Record<string, string> = {
@@ -216,9 +238,29 @@ function App() {
     relay_path: null,
     bridge_path: null,
     log_level: "info",
+    provider_bridge: {
+      bind_host: "127.0.0.1",
+      port: 8787,
+      provider: "deepseek",
+      default_model: "deepseek-v4-pro",
+    },
   });
   const [settingsPort, setSettingsPort] = useState("9000");
   const [portStatus, setPortStatus] = useState<"checking" | "available" | "taken">("available");
+  const [providerBridgeStatus, setProviderBridgeStatus] = useState<ProviderBridgeStatus>({
+    running: false,
+    bind_host: "127.0.0.1",
+    port: 8787,
+    base_url: "http://127.0.0.1:8787",
+    provider: "deepseek",
+  });
+  const [deepSeekKeyStatus, setDeepSeekKeyStatus] = useState<DeepSeekKeyStatus>({
+    available: false,
+    source: "missing",
+    has_stored_key: false,
+  });
+  const [deepSeekApiKeyInput, setDeepSeekApiKeyInput] = useState("");
+  const [providerBridgeBusy, setProviderBridgeBusy] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const logError = useCallback((msg: string) => {
@@ -244,6 +286,20 @@ function App() {
       if (s.pairing_code) {
         setPairingCode(s.pairing_code);
       }
+    } catch {
+      return;
+    }
+  }, [tauriReady]);
+
+  const refreshProviderBridgeStatus = useCallback(async () => {
+    if (!tauriReady) return;
+    try {
+      const [bridge, key] = await Promise.all([
+        invoke<ProviderBridgeStatus>("get_provider_bridge_status"),
+        invoke<DeepSeekKeyStatus>("get_provider_bridge_deepseek_key_status"),
+      ]);
+      setProviderBridgeStatus(bridge);
+      setDeepSeekKeyStatus(key);
     } catch {
       return;
     }
@@ -275,6 +331,11 @@ function App() {
       }
     }).catch(() => {});
   }, [tauriReady]);
+
+  useEffect(() => {
+    if (!tauriReady) return;
+    refreshProviderBridgeStatus();
+  }, [tauriReady, refreshProviderBridgeStatus]);
 
 
   // Listen for log entries
@@ -472,9 +533,13 @@ function App() {
     if (!tauriReady) return;
 
     refreshStatus();
-    const interval = setInterval(refreshStatus, 3000);
+    refreshProviderBridgeStatus();
+    const interval = setInterval(() => {
+      refreshStatus();
+      refreshProviderBridgeStatus();
+    }, 3000);
     return () => clearInterval(interval);
-  }, [tauriReady, refreshStatus]);
+  }, [tauriReady, refreshStatus, refreshProviderBridgeStatus]);
 
   const handleStartAll = async () => {
     if (!tauriReady) return;
@@ -666,6 +731,48 @@ function App() {
       });
     } catch (e) {
       logError(`Save failed: ${e}`);
+    }
+  };
+
+  const handleSaveDeepSeekApiKey = async () => {
+    if (!tauriReady) return;
+    try {
+      const next = await invoke<DeepSeekKeyStatus>("set_provider_bridge_deepseek_api_key", {
+        key: deepSeekApiKeyInput,
+      });
+      setDeepSeekKeyStatus(next);
+      setDeepSeekApiKeyInput("");
+    } catch (e) {
+      logError(`DeepSeek key save failed: ${e}`);
+    }
+  };
+
+  const handleClearDeepSeekApiKey = async () => {
+    if (!tauriReady) return;
+    try {
+      const next = await invoke<DeepSeekKeyStatus>("set_provider_bridge_deepseek_api_key", {
+        key: null,
+      });
+      setDeepSeekKeyStatus(next);
+      setDeepSeekApiKeyInput("");
+    } catch (e) {
+      logError(`DeepSeek key clear failed: ${e}`);
+    }
+  };
+
+  const handleToggleProviderBridge = async () => {
+    if (!tauriReady || providerBridgeBusy) return;
+    setProviderBridgeBusy(true);
+    try {
+      const next = providerBridgeStatus.running
+        ? await invoke<ProviderBridgeStatus>("stop_provider_bridge")
+        : await invoke<ProviderBridgeStatus>("start_provider_bridge");
+      setProviderBridgeStatus(next);
+      await refreshProviderBridgeStatus();
+    } catch (e) {
+      logError(`Provider bridge ${providerBridgeStatus.running ? "stop" : "start"} failed: ${e}`);
+    } finally {
+      setProviderBridgeBusy(false);
     }
   };
 
@@ -986,6 +1093,49 @@ function App() {
               status={phoneConnected ? "running" : "unknown"}
               value={phoneConnected ? "Connected" : "--"}
             />
+          </div>
+
+          <div
+            style={{
+              background: "var(--bg-surface)",
+              borderRadius: "7px",
+              border: "1px solid var(--border-color)",
+              padding: "10px 12px",
+              display: "grid",
+              gap: "8px",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-primary)" }}>
+                  Codex provider bridge
+                </div>
+                <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginTop: "2px" }}>
+                  {providerBridgeStatus.base_url}/v1
+                </div>
+              </div>
+              <ActionBtn
+                label={providerBridgeBusy ? "Working..." : providerBridgeStatus.running ? "Stop" : "Start"}
+                color={providerBridgeStatus.running ? "#FF5C5C" : "#35C759"}
+                onClick={handleToggleProviderBridge}
+                disabled={providerBridgeBusy || (!providerBridgeStatus.running && !deepSeekKeyStatus.available)}
+                compact
+              />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+              <StatusCard label="Provider" status={providerBridgeStatus.running ? "running" : "stopped"} />
+              <StatusCard
+                label="DeepSeek key"
+                status={deepSeekKeyStatus.available ? "running" : "error"}
+                value={
+                  deepSeekKeyStatus.source === "environment"
+                    ? "Environment"
+                    : deepSeekKeyStatus.source === "stored"
+                      ? "Stored"
+                      : "Missing"
+                }
+              />
+            </div>
           </div>
 
           {/* Connection Info */}
@@ -1542,6 +1692,62 @@ function App() {
                 outline: "none",
               }}
             />
+          </div>
+
+          <div
+            style={{
+              marginBottom: "12px",
+              padding: "10px",
+              background: "var(--bg-primary)",
+              border: "1px solid var(--border-color)",
+              borderRadius: "6px",
+              display: "grid",
+              gap: "8px",
+            }}
+          >
+            <div>
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-primary)" }}>
+                DeepSeek API key
+              </div>
+              <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginTop: "3px" }}>
+                {deepSeekKeyStatus.source === "environment"
+                  ? "Using DEEPSEEK_API_KEY from the environment."
+                  : deepSeekKeyStatus.has_stored_key
+                    ? "A local key is stored for the provider bridge."
+                    : "No key is available for the provider bridge."}
+              </div>
+            </div>
+            <input
+              type="password"
+              value={deepSeekApiKeyInput}
+              onChange={(e) => setDeepSeekApiKeyInput(e.target.value)}
+              placeholder={deepSeekKeyStatus.has_stored_key ? "Enter a replacement key" : "sk-..."}
+              style={{
+                width: "100%",
+                padding: "6px 8px",
+                fontSize: "10px",
+                fontFamily: "monospace",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-color)",
+                borderRadius: "4px",
+                color: "var(--text-primary)",
+                outline: "none",
+              }}
+            />
+            <div style={{ display: "flex", gap: "6px" }}>
+              <ActionBtn
+                label="Save key"
+                color="#35C759"
+                onClick={handleSaveDeepSeekApiKey}
+                disabled={!deepSeekApiKeyInput.trim()}
+              />
+              <ActionBtn
+                label="Clear stored"
+                color="#FF5C5C"
+                onClick={handleClearDeepSeekApiKey}
+                disabled={!deepSeekKeyStatus.has_stored_key}
+              />
+            </div>
           </div>
 
           <div
