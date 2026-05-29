@@ -25,7 +25,8 @@ relay/           Local relay server used by the bridge
 android/         Android app source and build files
 CodexMobile/     iOS app source and Xcode project
 shared/          Shared protocol and model code
-run-local-remodex.sh  Local relay + bridge launcher
+run-local-remodex.sh  Local relay + bridge launcher for macOS/Linux shells
+run-local-remodex.ps1 Windows PowerShell local relay + bridge launcher
 ```
 
 ## Prerequisites
@@ -44,11 +45,24 @@ Start the local relay and bridge:
 ./run-local-remodex.sh
 ```
 
-That script:
+On Windows, use PowerShell 7:
+
+```powershell
+.\run-local-remodex.ps1
+```
+
+These scripts:
 
 - starts the local relay from `relay/`
 - starts the bridge from `phodex-bridge/`
 - prints the pairing QR in the terminal
+
+If the advertised host in the QR is not reachable from your phone, pass the
+LAN or VPN address explicitly:
+
+```powershell
+.\run-local-remodex.ps1 -Hostname 192.168.1.254
+```
 
 If you already have a relay and only want the bridge, run:
 
