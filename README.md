@@ -169,117 +169,24 @@ cd remodex
 ./run-local-remodex.sh
 ```
 
-That launcher starts a local relay, points the bridge at `ws://<your-host>:9000/relay` by default, and prints the pairing QR for the iPhone app.
+On Windows, use PowerShell 7:
 
-For iPhone self-hosting, the recommended path is Tailscale or another stable private network. Plain LAN pairing over `ws://<lan-ip>` on the same Wi-Fi is still available for local testing, but it can be unreliable on some iOS devices even when the relay and Wi-Fi are healthy.
-
-Options:
-
-- `./run-local-remodex.sh --hostname <lan-hostname-or-ip>`
-- `./run-local-remodex.sh --relay-url https://<random>.trycloudflare.com`
-- `./run-local-remodex.sh --bind-host 127.0.0.1 --port 9100`
-
-If your iPhone is pairing over LAN, use a hostname or IP the phone can actually reach.
-
-For a temporary Cloudflare Tunnel, run this in one terminal:
-
-```sh
-cloudflared tunnel --url http://127.0.0.1:9000
+```powershell
+.\run-local-remodex.ps1
 ```
 
-Then pass the generated `https://<random>.trycloudflare.com` URL to the local launcher in another terminal:
-
-```sh
-./run-local-remodex.sh --relay-url https://<random>.trycloudflare.com
-```
-
-The launcher advertises that as `wss://<random>.trycloudflare.com/relay` in the pairing QR while keeping the relay process local.
-
-## Custom Relay Endpoint
-
-For a full public self-hosting walkthrough, see [`Docs/self-hosting.md`](Docs/self-hosting.md).
-
-If you want the npm bridge to point at your own setup instead of the package default, override `REMODEX_RELAY` explicitly:
-
-```sh
-REMODEX_RELAY="ws://localhost:9000/relay" remodex up
-```
-
-For self-hosted iPhone usage, prefer a relay URL reachable over Tailscale or another stable private network. Treat plain local `ws://192.168.x.x` pairing as best-effort rather than the recommended production path on iOS.
-
-A common private setup looks like this:
-
-1. Run the relay on your Mac, a mini server, or a VPS you control
-2. Put that machine on Tailscale
-3. Set `REMODEX_RELAY` to the Tailscale-reachable `ws://` or `wss://` relay URL
-4. Pair once with QR
-5. Let the iPhone reconnect to the same trusted Mac over that relay later
-
-If that relay is fronting a Mac bridge, the macOS daemon can keep the bridge alive for hands-free reconnects. If you self-host against a non-macOS bridge, the same relay path still works, but automatic background service management is not built in yet.
-
-Reverse-proxy subpaths work too, so a hosted relay behind Traefik can live under the same domain as other APIs:
-
-```sh
-REMODEX_RELAY="wss://api.example.com/remodex/relay" remodex up
-```
-
-In that setup, the public endpoints can look like this:
-
-- `wss://api.example.com/remodex/relay`
-- `https://api.example.com/remodex/v1/push/session/register-device`
-- `https://api.example.com/remodex/v1/push/session/notify-completion`
-
-Have the proxy strip `/remodex` before forwarding so the relay still receives `/relay/...` and `/v1/push/...`.
-
-If you point `REMODEX_RELAY` at your own self-hosted relay, managed push stays off unless you also set `REMODEX_PUSH_SERVICE_URL` on the bridge and explicitly enable push on the relay.
-
-## Commands
-
-### `remodex up`
-
-Starts Remodex.
-
-On macOS, `remodex up` is the friendly entrypoint for the background bridge service:
-
-- Writes the daemon config used by the `launchd` service
-- Starts or restarts the background bridge service
-- Waits for a pairing payload and prints a QR for first-time trust or recovery
-- Keeps the bridge alive even if you close the terminal later
-
-On non-macOS platforms, `remodex up` runs the bridge in the foreground.
-
-In both cases the bridge:
-
-- Spawns `codex app-server` (or connects to an existing endpoint)
-- Connects the Mac bridge to the configured relay
-- Forwards JSON-RPC messages bidirectionally
-- Handles git commands from the phone
-- Persists the active thread for later resumption
-
-### `remodex start`
-
-macOS only. Starts the background bridge service without waiting for or printing a QR in the current terminal.
-If the service is already loaded, this path refreshes it in place.
-
-### `remodex restart`
-
-macOS only. Explicitly restarts the background bridge service without waiting for or printing a QR in the current terminal.
-
-### `remodex stop`
-
-macOS only. Stops the background bridge service and clears its transient runtime status.
-
-### `remodex status`
+These scripts:
 
 macOS only. Prints the current `launchd` / bridge status, including whether the service is loaded and whether a recent pairing payload exists.
 
-### `remodex run-service`
+If the advertised host in the QR is not reachable from your phone, pass the
+LAN or VPN address explicitly:
 
-macOS only. Internal service entrypoint used by `launchd`. You normally do not run this manually.
+```powershell
+.\run-local-remodex.ps1 -Hostname 192.168.1.254
+```
 
-### `remodex --version`
-
-Prints the installed Remodex CLI version.
+If you already have a relay and only want the bridge, run:
 
 ```sh
 remodex --version

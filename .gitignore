@@ -18,6 +18,7 @@ build/
 # Environment / secrets
 .env
 .env.*
+.remodex-local/
 *.pem
 *.p12
 *.key
