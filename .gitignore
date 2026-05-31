@@ -15,9 +15,6 @@ DerivedData/
 build/
 *.ipa
 
-# iOS app (excluded from this branch)
-CodexMobile/*
-
 # Environment / secrets
 .env
 .env.*

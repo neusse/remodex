@@ -256,7 +256,12 @@ private fun CodexService.persistThreadRename(
     val trimmedName = name.trim()
     if (trimmedName.isEmpty()) return
     persistedThreadRenameById[tid] = trimmedName
-    sessionPersistence.saveThreadRename(tid, trimmedName)
+    val device = resolvedMacScopedPersistenceDeviceId()
+    if (device != null) {
+        macScopedSessionStore.saveThreadRenames(device, persistedThreadRenameById.toMap())
+    } else {
+        sessionPersistence.saveThreadRename(tid, trimmedName)
+    }
 }
 
 private fun CodexService.hasExistingUserChatMessage(threadId: String): Boolean =

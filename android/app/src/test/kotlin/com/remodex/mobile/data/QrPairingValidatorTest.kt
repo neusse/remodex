@@ -121,7 +121,8 @@ class QrPairingValidatorTest {
                     .setBody(
                         """
                         {"ok":true,"v":$CODEX_PAIRING_QR_VERSION,"sessionId":"sess",
-                        "macDeviceId":"mac","macIdentityPublicKey":"$validMacIdentityPublicKey","expiresAt":$expires}
+                        "macDeviceId":"mac","macIdentityPublicKey":"$validMacIdentityPublicKey",
+                        "displayName":"Studio-PC","expiresAt":$expires}
                         """.trimIndent(),
                     ),
             )
@@ -140,6 +141,7 @@ class QrPairingValidatorTest {
             val success = assertIs<QrPairingValidationResult.Success>(result)
             assertEquals("sess", success.payload.sessionId)
             assertEquals(relayUrl, success.payload.relay)
+            assertEquals("Studio-PC", success.payload.displayName)
             val request = server.takeRequest()
             assertEquals("/v1/pairing/code/resolve", request.path)
         }

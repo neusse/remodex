@@ -229,7 +229,6 @@ internal fun CodexMessage.shouldDisplayPlanBarAccessory(): Boolean {
     if (role != CodexMessageRole.system || kind != CodexMessageKind.plan) return false
     if (isStreaming) return true
     val state = planState ?: return text.trim().isNotEmpty()
-    if (PlanAccessorySnapshot.fromMessage(this).status == PlanAccessoryStatus.Completed) return false
     return state.explanation?.trim()?.isNotEmpty() == true || state.steps.isNotEmpty()
 }
 

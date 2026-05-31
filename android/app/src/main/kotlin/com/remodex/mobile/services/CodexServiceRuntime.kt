@@ -152,7 +152,7 @@ internal fun CodexService.normalizeRuntimeSelectionsAfterModelsUpdate() {
 }
 
 internal fun CodexService.persistRuntimeSelection() {
-    sessionPersistence.saveRuntimeSelection(
+    persistRuntimeSelectionSnapshot(
         RuntimeSelectionSnapshot(
             selectedModelId = _selectedModelId.value,
             selectedReasoningEffort = _selectedReasoningEffort.value,

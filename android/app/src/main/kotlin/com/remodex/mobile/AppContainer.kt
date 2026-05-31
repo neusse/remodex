@@ -13,6 +13,9 @@ import com.remodex.mobile.core.security.SecureStore
 import com.remodex.mobile.core.config.FeatureFlags
 import com.remodex.mobile.core.readRemodexAppVersionName
 import com.remodex.mobile.data.CodexRepository
+import com.remodex.mobile.data.PetCompanionStore
+import com.remodex.mobile.services.RelayHealthClient
+import com.remodex.mobile.services.SubscriptionService
 import com.remodex.mobile.services.CodexService
 import com.remodex.mobile.terminal.SecureTerminalKeyValueStore
 import com.remodex.mobile.terminal.TerminalProfileRepository
@@ -75,6 +78,15 @@ object AppContainer {
     lateinit var terminalTrustedHostRepository: TerminalTrustedHostRepository
         private set
 
+    lateinit var petCompanionStore: PetCompanionStore
+        private set
+
+    lateinit var subscriptionService: SubscriptionService
+        private set
+
+    lateinit var relayHealthClient: RelayHealthClient
+        private set
+
     fun initialize(context: Context) {
         val app = context.applicationContext
         appContext = app
@@ -129,5 +141,8 @@ object AppContainer {
                 deviceModelProvider = { BetaDeviceInfo.coarseDeviceModel() },
                 deviceKeyProvider = { BetaDeviceInfo.stableBetaDeviceKey(app) },
             )
+        petCompanionStore = PetCompanionStore(app)
+        subscriptionService = SubscriptionService(app)
+        relayHealthClient = RelayHealthClient(httpCallClient, sessionPersistence)
     }
 }

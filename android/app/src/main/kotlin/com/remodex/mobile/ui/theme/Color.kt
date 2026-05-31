@@ -68,8 +68,8 @@ private fun Color.over(base: Color): Color {
     return Color(red = ch(red, base.red), green = ch(green, base.green), blue = ch(blue, base.blue))
 }
 
-// Dark - pure black app canvas with graphite surfaces.
-val RemodexDarkBackground = Color(0xFF000000)
+// Dark — graphite surfaces (reference warm gray, not pure black)
+val RemodexDarkBackground = Color(0xFF101214)
 val RemodexDarkSurface = Color(0xFF15181B)
 val RemodexDarkSurfaceVariant = Color(0xFF202429)
 val RemodexDarkOnBackground = Color(0xFFECE9E1)

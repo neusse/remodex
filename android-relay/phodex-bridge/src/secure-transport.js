@@ -259,6 +259,7 @@ function createBridgeSecureTransport({
       expiresAtForTranscript,
       macSignature,
       clientNonce: clientNonceBase64,
+      displayName: bridgeDisplayName,
     });
   }
 

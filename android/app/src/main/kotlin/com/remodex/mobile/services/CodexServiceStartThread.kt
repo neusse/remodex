@@ -17,7 +17,7 @@ internal suspend fun CodexService.startThreadInternal(
     serviceTier: String? = null,
 ): CodexThread {
     if (!sessionReady) throw CodexServiceError.Disconnected
-    val normalizedCwd = CodexThread.normalizeProjectPath(cwd?.trim()?.takeIf { it.isNotEmpty() })
+    val normalizedCwd = CodexThread.normalizeThreadStartCwd(cwd?.trim()?.takeIf { it.isNotEmpty() })
     val resolvedModel =
         model?.trim()?.takeIf { it.isNotEmpty() }
             ?: selectedModelOption()?.model?.trim()?.takeIf { it.isNotEmpty() }
@@ -62,9 +62,9 @@ internal suspend fun CodexService.startThreadInternal(
             throw CodexServiceError.InvalidResponse("thread/start thread decode failed")
         }
     val patched = applyRequestedProjectPathForNewThread(decoded, normalizedCwd)
-    normalizedCwd?.let { cwd ->
-        beginAuthoritativeProjectPathTransition(patched.id, cwd)
-        rememberAssociatedManagedWorktreePathIfWorktree(cwd, patched.id)
+    CodexThread.normalizeProjectPath(normalizedCwd)?.let { projectPath ->
+        beginAuthoritativeProjectPathTransition(patched.id, projectPath)
+        rememberAssociatedManagedWorktreePathIfWorktree(projectPath, patched.id)
     }
     return runNewThreadOpenFlow(
         thread = patched,
@@ -134,7 +134,7 @@ private class CodexServiceNewThreadOpenSink(
 
     override fun activateStartedThread(threadId: String) {
         service._activeThreadId.value = threadId
-        service.sessionPersistence.saveLastActiveThreadId(threadId)
+        service.persistActiveThreadId(threadId)
     }
 }
 
@@ -142,8 +142,8 @@ internal fun applyRequestedProjectPathForNewThread(
     thread: CodexThread,
     requested: String?,
 ): CodexThread {
-    val preferred = CodexThread.normalizeProjectPath(requested) ?: return thread
-    if (thread.normalizedProjectPath == preferred) return thread
+    val preferred = CodexThread.normalizeThreadStartCwd(requested) ?: return thread
+    if (thread.cwd == preferred) return thread
     return thread.copy(cwd = preferred)
 }
 

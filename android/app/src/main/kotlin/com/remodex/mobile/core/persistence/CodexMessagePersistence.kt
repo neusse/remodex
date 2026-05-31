@@ -32,6 +32,7 @@ class CodexMessagePersistence(
 
     private val primaryName = "codex-message-history-v6.bin"
     private val perThreadDirName = "codex-message-history-v7"
+    private val macScopedDirName = "codex-message-history-mac-v1"
     private val tailCacheName = "codex-message-tail-v1.bin"
     private val threadIndexName = "codex-message-thread-index-v1.bin"
     private val migrationMarkerName = "codex-message-v7-migrated.marker"
@@ -47,22 +48,23 @@ class CodexMessagePersistence(
     fun loadInitialThreadTail(
         lastActiveThreadId: String?,
         tailLimit: Int,
+        macDeviceId: String? = null,
     ): Map<String, List<CodexMessage>> {
         val tid = lastActiveThreadId?.trim()?.takeIf { it.isNotEmpty() } ?: return emptyMap()
         val limit = tailLimit.coerceAtLeast(1)
-        loadThread(tid)?.let { messages ->
+        loadThread(tid, macDeviceId)?.let { messages ->
             return mapOf(tid to messages.takeLast(limit))
         }
-        loadTailCache()[tid]?.let { messages ->
+        loadTailCache(macDeviceId)[tid]?.let { messages ->
             return mapOf(tid to messages.takeLast(limit))
         }
         return emptyMap()
     }
 
-    fun load(): Map<String, List<CodexMessage>> {
-        val perThread = loadPerThreadStore()
+    fun load(macDeviceId: String? = null): Map<String, List<CodexMessage>> {
+        val perThread = loadPerThreadStore(macDeviceId)
         if (perThread.isNotEmpty()) return perThread
-        for (file in storeFiles()) {
+        for (file in storeFiles(macDeviceId)) {
             if (!file.exists() || !file.isFile || file.length() == 0L) continue
             val bytes = runCatching { file.readBytes() }.getOrNull() ?: continue
             val decoded: Map<String, List<CodexMessage>>? =
@@ -80,10 +82,13 @@ class CodexMessagePersistence(
         return emptyMap()
     }
 
-    fun save(value: Map<String, List<CodexMessage>>) {
+    fun save(
+        value: Map<String, List<CodexMessage>>,
+        macDeviceId: String? = null,
+    ) {
         val sanitized = sanitizedForPersistence(value)
-        savePerThreadStore(sanitized)
-        saveTailCache(sanitized)
+        savePerThreadStore(sanitized, macDeviceId)
+        saveTailCache(sanitized, macDeviceId)
     }
 
     fun migrateLegacyMonolithToPerThreadIfNeeded() {
@@ -124,22 +129,25 @@ class CodexMessagePersistence(
         return emptyMap()
     }
 
-    private fun loadPerThreadStore(): Map<String, List<CodexMessage>> =
-        perThreadDir()
+    private fun loadPerThreadStore(macDeviceId: String?): Map<String, List<CodexMessage>> =
+        perThreadDir(macDeviceId)
             .listFiles()
             .orEmpty()
             .asSequence()
             .filter { it.isFile && it.extension == "bin" && it.length() > 0L }
             .mapNotNull { file ->
-                val threadId = threadIdFromFile(file) ?: return@mapNotNull null
+                val threadId = threadIdFromFile(file, macDeviceId) ?: return@mapNotNull null
                 val messages = loadThreadFile(file) ?: return@mapNotNull null
                 threadId to messages
             }
             .toMap()
 
-    private fun loadThread(threadId: String): List<CodexMessage>? {
+    private fun loadThread(
+        threadId: String,
+        macDeviceId: String?,
+    ): List<CodexMessage>? {
         val tid = threadId.trim().takeIf { it.isNotEmpty() } ?: return null
-        return loadThreadFile(threadFile(tid))
+        return loadThreadFile(threadFile(tid, macDeviceId))
     }
 
     private fun loadThreadFile(file: File): List<CodexMessage>? {
@@ -152,10 +160,13 @@ class CodexMessagePersistence(
         }.getOrNull()?.let { sanitizedForPersistence(mapOf("_" to it))["_"].orEmpty() }
     }
 
-    private fun savePerThreadStore(value: Map<String, List<CodexMessage>>) {
-        val dir = perThreadDir()
+    private fun savePerThreadStore(
+        value: Map<String, List<CodexMessage>>,
+        macDeviceId: String? = null,
+    ) {
+        val dir = perThreadDir(macDeviceId)
         dir.mkdirs()
-        val index = loadThreadIndex().toMutableMap()
+        val index = loadThreadIndex(macDeviceId).toMutableMap()
         for ((threadId, messages) in value) {
             val tid = threadId.trim()
             if (tid.isEmpty()) continue
@@ -167,14 +178,14 @@ class CodexMessagePersistence(
             val encrypted =
                 runCatching { MessageHistoryAesGcm.encrypt(plaintext, messageHistoryKey()) }.getOrNull()
                     ?: continue
-            threadFile(tid).writeBytes(encrypted)
+            threadFile(tid, macDeviceId).writeBytes(encrypted)
             index[hashedThreadId(tid)] = tid
         }
-        saveThreadIndex(index)
+        saveThreadIndex(index, macDeviceId)
     }
 
-    private fun loadTailCache(): Map<String, List<CodexMessage>> {
-        val file = storeDir().resolve(tailCacheName)
+    private fun loadTailCache(macDeviceId: String? = null): Map<String, List<CodexMessage>> {
+        val file = storeDir(macDeviceId).resolve(tailCacheName)
         if (!file.exists() || !file.isFile || file.length() == 0L) return emptyMap()
         val bytes = runCatching { file.readBytes() }.getOrNull() ?: return emptyMap()
         val plain = MessageHistoryAesGcm.decrypt(bytes, messageHistoryKey()) ?: return emptyMap()
@@ -183,7 +194,10 @@ class CodexMessagePersistence(
         }.getOrNull()?.let(::sanitizedForPersistence).orEmpty()
     }
 
-    private fun saveTailCache(value: Map<String, List<CodexMessage>>) {
+    private fun saveTailCache(
+        value: Map<String, List<CodexMessage>>,
+        macDeviceId: String? = null,
+    ) {
         val tails = value.mapValues { (_, messages) -> messages.takeLast(DEFAULT_TAIL_CACHE_LIMIT) }
         val plaintext =
             runCatching { json.encodeToString(mapSerializer, tails) }
@@ -194,34 +208,41 @@ class CodexMessagePersistence(
         val encrypted =
             runCatching { MessageHistoryAesGcm.encrypt(plaintext, key) }.getOrNull()
                 ?: return
-        val file = storeDir().resolve(tailCacheName)
+        val file = storeDir(macDeviceId).resolve(tailCacheName)
         file.parentFile?.mkdirs()
         file.writeBytes(encrypted)
     }
 
-    private fun storeDir(): File {
+    private fun storeDir(macDeviceId: String? = null): File {
         val dir = File(context.filesDir, context.packageName)
         dir.mkdirs()
-        return dir
+        val device = macDeviceId?.trim()?.takeIf { it.isNotEmpty() } ?: return dir
+        return dir.resolve(macScopedDirName).resolve(hashedValue(device)).apply { mkdirs() }
     }
 
-    private fun storeFiles(): List<File> {
-        val dir = storeDir()
+    private fun storeFiles(macDeviceId: String? = null): List<File> {
+        val dir = storeDir(macDeviceId)
         return listOf(dir.resolve(primaryName)) + legacyNames.map { dir.resolve(it) }
     }
 
-    private fun perThreadDir(): File = storeDir().resolve(perThreadDirName)
+    private fun perThreadDir(macDeviceId: String?): File = storeDir(macDeviceId).resolve(perThreadDirName)
 
-    private fun threadFile(threadId: String): File = perThreadDir().resolve("${hashedThreadId(threadId)}.bin")
+    private fun threadFile(
+        threadId: String,
+        macDeviceId: String?,
+    ): File = perThreadDir(macDeviceId).resolve("${hashedThreadId(threadId)}.bin")
 
-    private fun threadIdFromFile(file: File): String? {
+    private fun threadIdFromFile(
+        file: File,
+        macDeviceId: String?,
+    ): String? {
         val hash = file.nameWithoutExtension
-        loadThreadIndex()[hash]?.let { return it }
-        return loadTailCache().entries.firstOrNull { hashedThreadId(it.key) == hash }?.key
+        loadThreadIndex(macDeviceId)[hash]?.let { return it }
+        return loadTailCache(macDeviceId).entries.firstOrNull { hashedThreadId(it.key) == hash }?.key
     }
 
-    private fun loadThreadIndex(): Map<String, String> {
-        val file = storeDir().resolve(threadIndexName)
+    private fun loadThreadIndex(macDeviceId: String? = null): Map<String, String> {
+        val file = storeDir(macDeviceId).resolve(threadIndexName)
         if (!file.exists() || !file.isFile || file.length() == 0L) return emptyMap()
         val bytes = runCatching { file.readBytes() }.getOrNull() ?: return emptyMap()
         val plain = MessageHistoryAesGcm.decrypt(bytes, messageHistoryKey()) ?: return emptyMap()
@@ -231,7 +252,10 @@ class CodexMessagePersistence(
         }.getOrNull().orEmpty()
     }
 
-    private fun saveThreadIndex(index: Map<String, String>) {
+    private fun saveThreadIndex(
+        index: Map<String, String>,
+        macDeviceId: String?,
+    ) {
         val serializer = MapSerializer(String.serializer(), String.serializer())
         val plaintext =
             runCatching { json.encodeToString(serializer, index) }
@@ -241,12 +265,16 @@ class CodexMessagePersistence(
         val encrypted =
             runCatching { MessageHistoryAesGcm.encrypt(plaintext, messageHistoryKey()) }.getOrNull()
                 ?: return
-        storeDir().resolve(threadIndexName).writeBytes(encrypted)
+        storeDir(macDeviceId).resolve(threadIndexName).writeBytes(encrypted)
     }
 
     private fun hashedThreadId(threadId: String): String {
+        return hashedValue(threadId)
+    }
+
+    private fun hashedValue(value: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
-            .digest(threadId.toByteArray(Charsets.UTF_8))
+            .digest(value.toByteArray(Charsets.UTF_8))
         return digest.joinToString("") { "%02x".format(it) }
     }
 

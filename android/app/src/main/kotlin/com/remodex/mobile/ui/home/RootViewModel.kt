@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 enum class RootPhase {
     Onboarding,
     PairingScan,
+    PairingCode,
     Main,
 }
 
@@ -55,8 +56,8 @@ class RootViewModel(
     }
 
     private fun computeInitialPhase(): RootPhase {
-        if (!onboardingPreferences.hasShownSetupOnboarding()) {
-            onboardingPreferences.markSetupOnboardingShown()
+        // TODO: set to false after onboarding UI QA — restores one-time first-run flow.
+        if (FORCE_ONBOARDING_ON_EVERY_COLD_START || !onboardingPreferences.hasSeenOnboarding()) {
             return RootPhase.Onboarding
         }
         if (!hasRelayPairing()) {
@@ -98,6 +99,11 @@ class RootViewModel(
         _phase.value = RootPhase.PairingScan
     }
 
+    fun openPairingCode() {
+        stopAutoReconnectForManualControl()
+        _phase.value = RootPhase.PairingCode
+    }
+
     fun onAppLaunched() {
         autoReconnectJob?.cancel()
         autoReconnectJob = viewModelScope.launch {
@@ -111,7 +117,7 @@ class RootViewModel(
         autoReconnectJob = viewModelScope.launch {
             if (repository.isSessionReady.value) {
                 restoreActiveThreadIfNeeded()
-                val active = repository.activeThreadId.value ?: sessionPersistence.loadLastActiveThreadId()
+                val active = repository.activeThreadId.value
                 if (!active.isNullOrBlank()) {
                     repository.setActiveThreadId(active)
                     runCatching { repository.refreshUsageStatus(active) }
@@ -156,13 +162,15 @@ class RootViewModel(
             return
         }
         if (restoredActiveThread) return
-        val id = sessionPersistence.loadLastActiveThreadId() ?: return
+        val id = repository.activeThreadId.value ?: return
         repository.setActiveThreadId(id)
         restoredActiveThread = true
     }
 
     fun persistActiveThreadId(threadId: String?) {
-        sessionPersistence.saveLastActiveThreadId(threadId)
+        viewModelScope.launch {
+            repository.setActiveThreadId(threadId)
+        }
     }
 
     private suspend fun attemptAutoConnectIfNeeded(minIntervalMs: Long) {
@@ -336,6 +344,9 @@ class RootViewModel(
     }
 
     companion object {
+        /** When true, always open the 5-step onboarding on process start (QA only). */
+        private const val FORCE_ONBOARDING_ON_EVERY_COLD_START = true
+
         private const val AUTO_RECONNECT_AFTER_DROP_DELAY_MS = 1_000L
         private const val AUTO_RECONNECT_MIN_INTERVAL_MS = 5_000L
 

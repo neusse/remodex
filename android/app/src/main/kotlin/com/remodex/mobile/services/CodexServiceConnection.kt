@@ -90,7 +90,7 @@ internal suspend fun CodexService.disconnectImpl(preservePresentationState: Bool
 internal suspend fun CodexService.setActiveThreadIdImpl(threadId: String?) {
     _activeThreadId.value = threadId?.trim()?.takeIf { it.isNotEmpty() }
     val id = _activeThreadId.value
-    sessionPersistence.saveLastActiveThreadId(id)
+    persistActiveThreadId(id)
     if (id != null && sessionReady) {
         scope.launch(Dispatchers.IO) {
             catchUpThreadAfterSelectionOrReconnect(id)
@@ -125,7 +125,14 @@ internal suspend fun CodexService.resetBridgeSession(preservePresentationState: 
     _olderHistoryErrorByThread.value = emptyMap()
     authoritativeProjectPathByThreadId.clear()
     associatedManagedWorktreePathByThreadId.clear()
-    associatedManagedWorktreePathByThreadId.putAll(sessionPersistence.loadAssociatedManagedWorktreePaths())
+    val device = resolvedMacScopedPersistenceDeviceId()
+    associatedManagedWorktreePathByThreadId.putAll(
+        if (device != null) {
+            macScopedSessionStore.loadAssociatedManagedWorktreePaths(device)
+        } else {
+            sessionPersistence.loadAssociatedManagedWorktreePaths()
+        },
+    )
     turnDraftQueueStore.clear()
     testRpcRequestHandler = null
     loadingHistory.clear()

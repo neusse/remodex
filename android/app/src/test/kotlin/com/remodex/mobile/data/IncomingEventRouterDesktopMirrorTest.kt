@@ -203,6 +203,125 @@ class IncomingEventRouterDesktopMirrorTest {
         }
 
     @Test
+    fun codexEventAgentEnvelopeAfterCommand_appendsLaterAssistantMessage() =
+        runTest {
+            val timeline = MessageTimelineStore()
+            val finished = mutableListOf<String>()
+            val router =
+                newRouter(
+                    messageTimeline = timeline,
+                    onTurnFinished = { threadId -> finished += threadId },
+                )
+
+            router.dispatchNotification(
+                method = "turn/started",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "threadId" to JSONValue.Str("thread-1"),
+                            "turnId" to JSONValue.Str("turn-1"),
+                        ),
+                    ),
+            )
+            router.dispatchNotification(
+                method = "codex/event/agent_message",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "threadId" to JSONValue.Str("thread-1"),
+                            "turnId" to JSONValue.Str("turn-1"),
+                            "itemId" to JSONValue.Str("assistant-1"),
+                            "message" to JSONValue.Str("First answer"),
+                        ),
+                    ),
+            )
+            router.dispatchNotification(
+                method = "codex/event",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "msg" to
+                                JSONValue.Obj(
+                                    mapOf(
+                                        "type" to JSONValue.Str("exec_command_begin"),
+                                        "threadId" to JSONValue.Str("thread-1"),
+                                        "turnId" to JSONValue.Str("turn-1"),
+                                        "itemId" to JSONValue.Str("cmd-1"),
+                                        "command" to JSONValue.Str("echo hi"),
+                                    ),
+                                ),
+                        ),
+                    ),
+            )
+            router.dispatchNotification(
+                method = "codex/event",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "msg" to
+                                JSONValue.Obj(
+                                    mapOf(
+                                        "type" to JSONValue.Str("exec_command_end"),
+                                        "threadId" to JSONValue.Str("thread-1"),
+                                        "turnId" to JSONValue.Str("turn-1"),
+                                        "itemId" to JSONValue.Str("cmd-1"),
+                                        "command" to JSONValue.Str("echo hi"),
+                                    ),
+                                ),
+                        ),
+                    ),
+            )
+            router.dispatchNotification(
+                method = "codex/event",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "msg" to
+                                JSONValue.Obj(
+                                    mapOf(
+                                        "type" to JSONValue.Str("agent_message_delta"),
+                                        "threadId" to JSONValue.Str("thread-1"),
+                                        "turnId" to JSONValue.Str("turn-1"),
+                                        "itemId" to JSONValue.Str("assistant-2"),
+                                        "delta" to JSONValue.Str("Second"),
+                                    ),
+                                ),
+                        ),
+                    ),
+            )
+            router.dispatchNotification(
+                method = "codex/event",
+                params =
+                    JSONValue.Obj(
+                        mapOf(
+                            "msg" to
+                                JSONValue.Obj(
+                                    mapOf(
+                                        "type" to JSONValue.Str("agent_message_delta"),
+                                        "threadId" to JSONValue.Str("thread-1"),
+                                        "turnId" to JSONValue.Str("turn-1"),
+                                        "itemId" to JSONValue.Str("assistant-2"),
+                                        "delta" to JSONValue.Str(" answer"),
+                                    ),
+                                ),
+                        ),
+                    ),
+            )
+            advanceUntilIdle()
+
+            val messages = timeline.messagesByThread.value["thread-1"].orEmpty()
+            val assistantMessages = messages.filter { it.role == CodexMessageRole.assistant }
+            assertEquals(emptyList(), finished)
+            assertEquals(listOf("First answer", "Second answer"), assistantMessages.map { it.text })
+            assertEquals(listOf(false, true), assistantMessages.map { it.isStreaming })
+            assertEquals(listOf("assistant-1", "assistant-2"), assistantMessages.map { it.itemId })
+            assertEquals(
+                listOf(CodexMessageKind.chat, CodexMessageKind.commandExecution, CodexMessageKind.chat),
+                messages.map { it.kind },
+            )
+        }
+
+    @Test
     fun itemCompletedUserWithNestedTurnId_insertsBeforeSameTurnAssistant() =
         runTest {
             val timeline = MessageTimelineStore()

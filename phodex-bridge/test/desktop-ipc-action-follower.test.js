@@ -18,6 +18,7 @@ const {
   desktopFollowerPayloadForResponse,
   projectDesktopAssistantDeltaNotifications,
   projectPendingDesktopActions,
+  resolveDefaultIpcSocketPath,
   seedConversationStateFromThreadRead,
 } = require("../src/desktop-ipc-action-follower");
 
@@ -49,6 +50,7 @@ test("projects desktop pending user input as an app-server request shape", () =>
       threadId: "thread-1",
       turnId: "turn-1",
       itemId: "item-1",
+      remodexActionSource: "desktop-ipc-action-follower",
       questions: [{
         id: "q1",
         header: "Mode",
@@ -133,6 +135,7 @@ test("projects command, file, and permission approvals while ignoring completed 
   assert.equal(actions[1].params.grantRoot, "/repo");
   assert.equal(actions[2].params.path, "/repo/secrets.txt");
   assert.equal(actions[3].params.reason, "Need plugin network access");
+  assert.equal(actions[3].params.remodexActionSource, "desktop-ipc-action-follower");
 });
 
 test("builds desktop follower reply payloads from iOS responses", () => {
@@ -375,6 +378,42 @@ test("projects only appended assistant text as live app-server deltas", () => {
   );
 });
 
+test("projects canonical desktop agentMessage items as live app-server deltas", () => {
+  const previousState = {
+    turns: [{
+      id: "turn-agent-message",
+      items: [{
+        id: "agent-message-1",
+        type: "agentMessage",
+        text: "Hello",
+      }],
+    }],
+  };
+  const nextState = {
+    turns: [{
+      id: "turn-agent-message",
+      items: [{
+        id: "agent-message-1",
+        type: "agentMessage",
+        text: "Hello world",
+      }],
+    }],
+  };
+
+  assert.deepEqual(
+    projectDesktopAssistantDeltaNotifications("thread-agent-message", previousState, nextState),
+    [{
+      method: "item/agentMessage/delta",
+      params: {
+        threadId: "thread-agent-message",
+        turnId: "turn-agent-message",
+        itemId: "agent-message-1",
+        delta: " world",
+      },
+    }]
+  );
+});
+
 test("does not replay unchanged or rewritten assistant text as live deltas", () => {
   const previousState = {
     turns: [{
@@ -415,6 +454,11 @@ test("does not replay unchanged or rewritten assistant text as live deltas", () 
     projectDesktopAssistantDeltaNotifications("thread-1", previousState, nextState),
     []
   );
+});
+
+test("uses the Codex Desktop named pipe as the default Windows IPC path", (t) => {
+  useProcessPlatform(t, "win32");
+  assert.equal(resolveDefaultIpcSocketPath(), "\\\\.\\pipe\\codex-ipc");
 });
 
 test("desktop IPC follower projects first add patch-only action updates without a baseline read", async (t) => {
@@ -1099,4 +1143,15 @@ function createIpcTestSocket(prefix) {
     ? `\\\\.\\pipe\\${path.basename(tempDir)}-ipc`
     : path.join(tempDir, "ipc.sock");
   return { tempDir, socketPath };
+}
+
+function useProcessPlatform(t, platform) {
+  const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", {
+    ...descriptor,
+    value: platform,
+  });
+  t.after(() => {
+    Object.defineProperty(process, "platform", descriptor);
+  });
 }

@@ -31,6 +31,8 @@ val betaEnabled =
     configValue("BETA_ENABLED").equals("true", ignoreCase = true) &&
         betaApiBaseUrl.isNotBlank()
 val defaultRelayUrl = configValue("PHODEX_DEFAULT_RELAY_URL")
+val subscriptionEnabled = configValue("SUBSCRIPTION_ENABLED").equals("true", ignoreCase = true)
+val subscriptionManagementUrl = configValue("SUBSCRIPTION_MANAGEMENT_URL")
 
 android {
     namespace = "com.remodex.mobile"
@@ -46,6 +48,8 @@ android {
         buildConfigField("boolean", "BETA_ENABLED", betaEnabled.toString())
         buildConfigField("String", "BETA_API_BASE_URL", quotedBuildConfigString(betaApiBaseUrl))
         buildConfigField("String", "BETA_API_KEY", quotedBuildConfigString(betaApiKey))
+        buildConfigField("boolean", "SUBSCRIPTION_ENABLED", subscriptionEnabled.toString())
+        buildConfigField("String", "SUBSCRIPTION_MANAGEMENT_URL", quotedBuildConfigString(subscriptionManagementUrl))
         manifestPlaceholders["PHODEX_DEFAULT_RELAY_URL"] = defaultRelayUrl
     }
 

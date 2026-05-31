@@ -62,7 +62,7 @@ internal suspend fun CodexService.startReviewInternal(
     val pendingId = messageTimelineStore.appendPendingUserMessage(targetThreadId, reviewPrompt, emptyList())
     noteProtectedRunningFallback(targetThreadId, true)
     _activeThreadId.value = targetThreadId
-    sessionPersistence.saveLastActiveThreadId(targetThreadId)
+    persistActiveThreadId(targetThreadId)
 
     try {
         val response = sendReviewStart(targetThreadId, target, baseBranch)

@@ -77,6 +77,25 @@ internal class MessageTimelineStore(
         saveMessages(map)
     }
 
+    suspend fun replaceAll(messagesByThread: Map<String, List<CodexMessage>>) {
+        mutex.withLock {
+            val normalized =
+                messagesByThread.mapValues { (_, messages) ->
+                    HistoryMessageMerge.normalize(messages)
+                }
+            rebuildSubagentIdentityDirectory(normalized.values.flatten())
+            publishMessages(
+                normalized.mapValues { (_, messages) ->
+                    messages.map(::resolveSubagentMessageIdentities)
+                },
+            )
+        }
+    }
+
+    fun persistSnapshot() {
+        saveMessages(_messagesByThread.value)
+    }
+
     suspend fun mergeThreadHistory(
         threadId: String,
         incoming: List<CodexMessage>,
@@ -581,6 +600,8 @@ internal class MessageTimelineStore(
             val targetIdx =
                 if (idx >= 0) {
                     idx
+                } else if (resolvedItemId != null) {
+                    findReusableTurnPlaceholderIndex(list, resolvedTurnId)
                 } else {
                     findSingleStreamingAssistantFallbackIndex(list, resolvedTurnId)
                 }
@@ -594,6 +615,7 @@ internal class MessageTimelineStore(
                         turnId = resolvedTurnId ?: m.turnId,
                         itemId = resolvedItemId ?: m.itemId,
                     )
+                finishOtherAssistantStreamsForNewItem(list, targetIdx, resolvedTurnId, resolvedItemId)
             } else {
                 list.add(
                     CodexMessage(
@@ -608,11 +630,49 @@ internal class MessageTimelineStore(
                         isStreaming = true,
                     ),
                 )
+                finishOtherAssistantStreamsForNewItem(list, list.lastIndex, resolvedTurnId, resolvedItemId)
             }
             map[threadId] = list
             publishMessages(map)
         }
     }
+
+    private fun finishOtherAssistantStreamsForNewItem(
+        list: MutableList<CodexMessage>,
+        keepIndex: Int,
+        turnId: String?,
+        itemId: String?,
+    ) {
+        val resolvedItemId = itemId?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        for (index in list.indices) {
+            if (index == keepIndex) continue
+            val message = list[index]
+            if (message.role != CodexMessageRole.assistant ||
+                message.kind != CodexMessageKind.chat ||
+                !message.isStreaming
+            ) {
+                continue
+            }
+            val sameTurn = turnId == null || message.turnId == null || message.turnId == turnId
+            if (!sameTurn) continue
+            val messageItemId = message.itemId?.trim()?.takeIf { it.isNotEmpty() }
+            if (messageItemId == null || messageItemId == resolvedItemId) continue
+            list[index] = message.copy(isStreaming = false)
+        }
+    }
+
+    private fun findReusableTurnPlaceholderIndex(
+        list: List<CodexMessage>,
+        turnId: String?,
+    ): Int =
+        list.indexOfLast { message ->
+            message.role == CodexMessageRole.assistant &&
+                message.kind == CodexMessageKind.chat &&
+                message.isStreaming &&
+                message.itemId.isNullOrBlank() &&
+                message.text.isEmpty() &&
+                (turnId == null || message.turnId == null || message.turnId == turnId)
+        }
 
     private fun findSingleStreamingAssistantFallbackIndex(
         list: List<CodexMessage>,
@@ -748,6 +808,48 @@ internal class MessageTimelineStore(
             map[threadId] = list
             publishMessages(map)
         }
+    }
+
+    suspend fun finishStreamingMessages(
+        threadId: String,
+        turnId: String? = null,
+        assistantChatOnly: Boolean = false,
+    ) {
+        mutex.withLock {
+            val resolvedTurnId = turnId?.trim()?.takeIf { it.isNotEmpty() }
+            val map = _messagesByThread.value.toMutableMap()
+            val list = map[threadId].orEmpty()
+            if (list.none { it.isStreaming && it.matchesStreamingFinish(resolvedTurnId, assistantChatOnly) }) {
+                return@withLock
+            }
+
+            val next =
+                list.mapNotNull { message ->
+                    if (!message.isStreaming || !message.matchesStreamingFinish(resolvedTurnId, assistantChatOnly)) {
+                        message
+                    } else if (
+                        message.role == CodexMessageRole.assistant &&
+                        message.kind == CodexMessageKind.chat &&
+                        message.text.isBlank() &&
+                        message.attachments.isEmpty()
+                    ) {
+                        null
+                    } else {
+                        message.copy(isStreaming = false)
+                    }
+                }
+            map[threadId] = next
+            publishMessages(map)
+        }
+    }
+
+    private fun CodexMessage.matchesStreamingFinish(
+        turnId: String?,
+        assistantChatOnly: Boolean,
+    ): Boolean {
+        if (turnId != null && this.turnId != turnId) return false
+        if (!assistantChatOnly) return true
+        return role == CodexMessageRole.assistant && kind == CodexMessageKind.chat
     }
 
     suspend fun appendSystemLine(

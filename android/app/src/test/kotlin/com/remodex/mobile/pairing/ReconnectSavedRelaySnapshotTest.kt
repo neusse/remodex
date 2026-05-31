@@ -20,6 +20,7 @@ import com.remodex.mobile.core.model.RPCMessage
 import com.remodex.mobile.core.persistence.RelaySessionSnapshot
 import com.remodex.mobile.core.transport.ConnectionState
 import com.remodex.mobile.data.CodexRepository
+import com.remodex.mobile.services.EmptyTrustedDeviceCodexRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -56,7 +57,7 @@ class ReconnectSavedRelaySnapshotTest {
         }
 }
 
-private class ReconnectTrackingRepository : CodexRepository {
+private class ReconnectTrackingRepository : CodexRepository, EmptyTrustedDeviceCodexRepository {
     var disconnectCalls = 0
     var lastConnectUrl: String? = null
     var lastConnectToken: String? = null

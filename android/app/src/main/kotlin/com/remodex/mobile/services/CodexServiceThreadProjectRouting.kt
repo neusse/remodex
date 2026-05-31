@@ -93,7 +93,7 @@ internal fun CodexService.rememberAssociatedManagedWorktreePathIfWorktree(
     val norm = CodexThread.normalizeProjectPath(projectPath) ?: return
     if (projectIconSystemNameFor(norm) == "arrow.triangle.branch") {
         associatedManagedWorktreePathByThreadId[tid] = norm
-        sessionPersistence.saveAssociatedManagedWorktreePath(tid, norm)
+        persistAssociatedManagedWorktreePaths()
     }
 }
 
@@ -105,15 +105,28 @@ private fun CodexService.restoreAssociatedManagedWorktreePath(
     if (tid.isEmpty()) return
     if (path == null) {
         associatedManagedWorktreePathByThreadId.remove(tid)
-        sessionPersistence.removeAssociatedManagedWorktreePath(tid)
+        persistAssociatedManagedWorktreePaths(removedThreadId = tid)
     } else {
         val n = CodexThread.normalizeProjectPath(path)
         if (n == null) {
             associatedManagedWorktreePathByThreadId.remove(tid)
-            sessionPersistence.removeAssociatedManagedWorktreePath(tid)
+            persistAssociatedManagedWorktreePaths(removedThreadId = tid)
         } else {
             associatedManagedWorktreePathByThreadId[tid] = n
-            sessionPersistence.saveAssociatedManagedWorktreePath(tid, n)
+            persistAssociatedManagedWorktreePaths()
+        }
+    }
+}
+
+private fun CodexService.persistAssociatedManagedWorktreePaths(removedThreadId: String? = null) {
+    val device = resolvedMacScopedPersistenceDeviceId()
+    if (device != null) {
+        macScopedSessionStore.saveAssociatedManagedWorktreePaths(device, associatedManagedWorktreePathByThreadId.toMap())
+    } else {
+        removedThreadId?.let { sessionPersistence.removeAssociatedManagedWorktreePath(it) }
+        val paths = associatedManagedWorktreePathByThreadId.toMap()
+        paths.forEach { (threadId, path) ->
+            sessionPersistence.saveAssociatedManagedWorktreePath(threadId, path)
         }
     }
 }
@@ -154,7 +167,7 @@ internal suspend fun CodexService.moveThreadToProjectPathImpl(
     current = current.copy(cwd = normalizedProjectPath, updatedAt = now)
     publishThreads(upsertThreadRow(_threads.value, current))
     _activeThreadId.value = normalizedThreadId
-    sessionPersistence.saveLastActiveThreadId(normalizedThreadId)
+    persistActiveThreadId(normalizedThreadId)
     resumedThreadIds.remove(normalizedThreadId)
 
     try {

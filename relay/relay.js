@@ -449,6 +449,7 @@ function resolvePairingCode({
     sessionId: registration.sessionId,
     macDeviceId: registration.macDeviceId,
     macIdentityPublicKey: registration.macIdentityPublicKey,
+    displayName: registration.displayName || null,
     expiresAt: registration.pairingExpiresAt,
   };
 }

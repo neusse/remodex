@@ -21,6 +21,7 @@ import com.remodex.mobile.core.model.RPCMessage
 import com.remodex.mobile.core.persistence.RelaySessionSnapshot
 import com.remodex.mobile.core.transport.ConnectionState
 import com.remodex.mobile.data.CodexRepository
+import com.remodex.mobile.services.EmptyTrustedDeviceCodexRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -163,7 +164,7 @@ class DesktopHandoffServiceTest {
 private class HandoffFakeRepository(
     sessionReady: Boolean = true,
     private val requestHandler: suspend (String, JSONValue?) -> RPCMessage,
-) : CodexRepository {
+) : CodexRepository, EmptyTrustedDeviceCodexRepository {
     private val sessionReadyFlow = MutableStateFlow(sessionReady)
     var lastConnectUrl: String? = null
     var lastConnectToken: String? = null

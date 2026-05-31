@@ -24,10 +24,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -45,6 +48,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.remodex.mobile.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -60,6 +65,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun TerminalRoute(
+    cdHint: String? = null,
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -82,6 +88,7 @@ fun TerminalRoute(
     TerminalScreen(
         state = state,
         output = viewModel.outputForSession(state.selectedSessionId),
+        cdHint = cdHint,
         onCreateProfile = viewModel::startCreateProfile,
         onEditProfile = viewModel::startEditProfile,
         onDeleteProfile = viewModel::deleteProfile,
@@ -133,6 +140,7 @@ fun TerminalRoute(
 fun TerminalScreen(
     state: TerminalState,
     output: kotlinx.coroutines.flow.Flow<ByteArray>,
+    cdHint: String? = null,
     onCreateProfile: () -> Unit,
     onEditProfile: (String) -> Unit,
     onDeleteProfile: (String) -> Unit,
@@ -258,7 +266,21 @@ fun TerminalScreen(
             )
         },
     ) { innerPadding ->
-        when (state.surface) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+        ) {
+            cdHint?.trim()?.takeIf { it.isNotEmpty() }?.let { path ->
+                Text(
+                    text = stringResource(R.string.new_chat_draft_terminal_cd_hint, path),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.secondaryText,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+            when (state.surface) {
             TerminalSurface.Profiles ->
                 TerminalProfilesContent(
                     profiles = state.profiles,
@@ -266,10 +288,7 @@ fun TerminalScreen(
                     onEditProfile = onEditProfile,
                     onDeleteProfile = onDeleteProfile,
                     onOpenProfile = onOpenProfile,
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding),
+                    modifier = Modifier.fillMaxSize(),
                 )
             TerminalSurface.Editor ->
                 TerminalProfileEditorContent(
@@ -282,17 +301,11 @@ fun TerminalScreen(
                     onPrivateKeyChange = onEditorPrivateKeyChange,
                     onAllowUnencryptedKeyChange = onEditorAllowUnencryptedKeyChange,
                     onSave = onSaveEditor,
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding),
+                    modifier = Modifier.fillMaxSize(),
                 )
             TerminalSurface.Session ->
                 Row(
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding),
+                    modifier = Modifier.fillMaxSize(),
                 ) {
                     if (showSessions) {
                         TerminalSessionSidebar(
@@ -323,6 +336,7 @@ fun TerminalScreen(
                         modifier = Modifier.weight(1f).fillMaxSize(),
                     )
                 }
+            }
         }
     }
 
@@ -453,22 +467,74 @@ private fun TerminalProfilesContent(
             TerminalSectionTitle(text = "Saved profiles")
         }
         profiles.forEach { profile ->
-            TerminalProfileCard(
-                title = profile.displayLabel,
-                subtitle = "${profile.username}@${profile.host}:${profile.port}",
-            ) {
-                TerminalPrimaryButton(
-                    text = "Open",
-                    onClick = { onOpenProfile(profile.id) },
-                    fullWidth = false,
-                )
-                TerminalSecondaryButton(text = "Edit", onClick = { onEditProfile(profile.id) })
-                TerminalTextAction(
-                    text = "Delete",
-                    onClick = { onDeleteProfile(profile.id) },
-                    destructive = true,
-                )
-            }
+            TerminalSavedProfileRow(
+                profile = profile,
+                onOpen = { onOpenProfile(profile.id) },
+                onEdit = { onEditProfile(profile.id) },
+                onDelete = { onDeleteProfile(profile.id) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TerminalSavedProfileRow(
+    profile: TerminalProfile,
+    onOpen: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = rememberSidebarColorPalette()
+    Row(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .remodexFlatControlChrome(TerminalFieldShape)
+                .padding(start = 18.dp, end = 10.dp, top = 16.dp, bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = profile.displayLabel,
+                style =
+                    MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                color = colors.primaryText,
+                maxLines = 1,
+            )
+            Text(
+                text = "${profile.username}@${profile.host}:${profile.port}",
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                color = colors.secondaryText,
+                maxLines = 1,
+            )
+        }
+        IconButton(onClick = onEdit) {
+            Icon(
+                imageVector = Icons.Outlined.Edit,
+                contentDescription = "Edit profile",
+                tint = colors.secondaryText,
+            )
+        }
+        TerminalPrimaryButton(
+            text = "Open",
+            onClick = onOpen,
+            modifier = Modifier.width(74.dp),
+            fullWidth = false,
+        )
+        IconButton(onClick = onDelete) {
+            Icon(
+                imageVector = Icons.Outlined.Delete,
+                contentDescription = "Delete profile",
+                tint = colors.secondaryText,
+            )
         }
     }
 }
@@ -639,20 +705,15 @@ private fun TerminalSessionContent(
             }
             return@Column
         }
-        TerminalViewportFrame(
+        TermuxTerminalSurface(
+            output = output,
+            onInput = onSend,
+            onResize = onResize,
             modifier =
                 Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-        ) {
-            TermuxTerminalSurface(
-                output = output,
-                onInput = onSend,
-                onResize = onResize,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
+                    .fillMaxWidth(),
+        )
         TerminalAccessoryBar(
             pendingModifier = pendingModifier,
             onModifier = { modifierValue ->

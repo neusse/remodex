@@ -107,7 +107,7 @@ internal suspend fun CodexService.forkThreadInternal(
 
     val forkId = patched.id.trim()
     _activeThreadId.value = forkId
-    sessionPersistence.saveLastActiveThreadId(forkId)
+    persistActiveThreadId(forkId)
     requestImmediateThreadListSync()
 
     val delaysMs = listOf(0L, 250L, 800L)

@@ -83,4 +83,31 @@ class ProjectFolderServiceTest {
             assertEquals(80, captured!!["limit"]?.intValue)
             assertEquals("/Users/me/remodex", entries.single().path)
         }
+
+    @Test
+    fun createRootlessChatRoot_sendsPromptHintAndReturnsPath() =
+        runTest {
+            var captured: Map<String, JSONValue>? = null
+            val service =
+                ProjectFolderService(
+                    MinimalSendRepository { method, params ->
+                        assertEquals("project/createRootlessChatRoot", method)
+                        captured = (params as JSONValue.Obj).map
+                        RPCMessage.success(
+                            id = null,
+                            result =
+                                JSONValue.Obj(
+                                    mapOf(
+                                        "path" to JSONValue.Str("C:\\Users\\me\\Documents\\Codex\\2026-05-28\\hello"),
+                                    ),
+                                ),
+                        )
+                    },
+                )
+
+            val path = service.createRootlessChatRoot(" hello ")
+
+            assertEquals("hello", captured!!["promptHint"]?.stringValue)
+            assertEquals("C:\\Users\\me\\Documents\\Codex\\2026-05-28\\hello", path)
+        }
 }

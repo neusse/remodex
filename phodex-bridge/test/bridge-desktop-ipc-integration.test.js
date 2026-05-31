@@ -21,6 +21,7 @@ test("bridge forwards desktop IPC actions to the phone and routes replies back t
   const ipcFrames = [];
   let relaySocket = null;
   let ipcServerSocket = null;
+  let bridge = null;
   let fakeCodex = null;
 
   await new Promise((resolve) => relayServer.once("listening", resolve));
@@ -70,7 +71,7 @@ test("bridge forwards desktop IPC actions to the phone and routes replies back t
   });
 
   t.after(() => {
-    fakeCodex?.emitClose();
+    bridge?.stop();
     relaySocket?.close();
     relayServer.close();
     ipcServer.close();
@@ -78,7 +79,7 @@ test("bridge forwards desktop IPC actions to the phone and routes replies back t
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  startBridge({
+  bridge = startBridge({
     printPairingQr: false,
     config: {
       relayUrl: `ws://127.0.0.1:${relayServer.address().port}`,
@@ -102,7 +103,7 @@ test("bridge forwards desktop IPC actions to the phone and routes replies back t
     params: { threadId: "thread-ipc" },
   }));
 
-  await waitFor(() => ipcServerSocket);
+  await waitFor(() => ipcServerSocket, 2_000);
   await wait(25);
   assert.equal(
     fakeCodex.sent.some((message) => message.method === "thread/read"),
@@ -169,12 +170,137 @@ test("bridge forwards desktop IPC actions to the phone and routes replies back t
   assert.equal(resolvedMessage.params.threadId, "thread-ipc");
 });
 
+test("bridge recovers desktop IPC state when the first live update is patch-only", async (t) => {
+  const { tempDir, socketPath: ipcSocketPath } = createIpcTestSocket("remodex-bridge-ipc-recovery-");
+  const relayServer = new WebSocket.Server({ port: 0 });
+  const relayMessages = [];
+  let relaySocket = null;
+  let ipcServerSocket = null;
+  let bridge = null;
+  let fakeCodex = null;
+
+  await new Promise((resolve) => relayServer.once("listening", resolve));
+  relayServer.on("connection", (socket) => {
+    relaySocket = socket;
+    socket.on("message", (data) => {
+      const parsed = safeParseJSON(data.toString("utf8"));
+      if (parsed) {
+        relayMessages.push(parsed);
+      }
+    });
+  });
+
+  const ipcServer = net.createServer((socket) => {
+    ipcServerSocket = socket;
+    attachFrameReader(socket, (frame) => {
+      if (frame.method === "initialize") {
+        writeFrame(socket, {
+          type: "response",
+          requestId: frame.requestId,
+          resultType: "success",
+          method: "initialize",
+          handledByClientId: "desktop",
+          result: { clientId: "desktop-test" },
+        });
+      }
+    });
+  });
+  await new Promise((resolve) => ipcServer.listen(ipcSocketPath, resolve));
+
+  const { startBridge } = loadBridgeWithTestDoubles({
+    createCodexTransportImpl() {
+      fakeCodex = createFakeCodexTransport({
+        threadReadResult: {
+          conversationState: {
+            turns: [],
+            requests: [{
+              id: "req-recovered",
+              method: "item/tool/requestUserInput",
+              completed: true,
+              params: {
+                threadId: "thread-ipc-recovery",
+                turnId: "turn-ipc-recovery",
+                itemId: "item-ipc-recovery",
+                questions: [{ id: "q1", question: "Continue?" }],
+              },
+            }],
+          },
+        },
+      });
+      return fakeCodex;
+    },
+  });
+
+  t.after(() => {
+    bridge?.stop();
+    relaySocket?.close();
+    relayServer.close();
+    ipcServer.close();
+    ipcServerSocket?.destroy();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  bridge = startBridge({
+    printPairingQr: false,
+    config: {
+      relayUrl: `ws://127.0.0.1:${relayServer.address().port}`,
+      pushServiceUrl: "",
+      pushPreviewMaxChars: 160,
+      refreshEnabled: false,
+      refreshDebounceMs: 1,
+      keepMacAwakeEnabled: false,
+      codexEndpoint: "",
+      refreshCommand: "",
+      codexBundleId: "",
+      codexAppPath: "",
+      desktopIpcSocketPath: ipcSocketPath,
+    },
+  });
+
+  await waitFor(() => relaySocket && relaySocket.readyState === WebSocket.OPEN);
+  relaySocket.send(JSON.stringify({
+    id: "resume-for-recovery",
+    method: "thread/resume",
+    params: { threadId: "thread-ipc-recovery" },
+  }));
+
+  await waitFor(() => ipcServerSocket, 2_000);
+  writeFrame(ipcServerSocket, {
+    type: "broadcast",
+    method: "thread-stream-state-changed",
+    sourceClientId: "desktop",
+    version: 1,
+    params: {
+      conversationId: "thread-ipc-recovery",
+      change: {
+        type: "patches",
+        patches: [{
+          op: "replace",
+          path: ["requests", 0, "completed"],
+          value: false,
+        }],
+      },
+    },
+  });
+
+  const recoveredRequest = await waitForMessage(
+    relayMessages,
+    (message) => message.id === "req-recovered"
+  );
+  assert.equal(recoveredRequest.method, "item/tool/requestUserInput");
+  assert.equal(
+    fakeCodex.sent.some((message) => message.method === "thread/read"),
+    true
+  );
+});
+
 test("bridge forwards live desktop assistant deltas to the phone", async (t) => {
   const { tempDir, socketPath: ipcSocketPath } = createIpcTestSocket("remodex-bridge-ipc-delta-");
   const relayServer = new WebSocket.Server({ port: 0 });
   const relayMessages = [];
   let relaySocket = null;
   let ipcServerSocket = null;
+  let bridge = null;
   let fakeCodex = null;
 
   await new Promise((resolve) => relayServer.once("listening", resolve));
@@ -213,7 +339,7 @@ test("bridge forwards live desktop assistant deltas to the phone", async (t) => 
   });
 
   t.after(() => {
-    fakeCodex?.emitClose();
+    bridge?.stop();
     relaySocket?.close();
     relayServer.close();
     ipcServer.close();
@@ -221,7 +347,7 @@ test("bridge forwards live desktop assistant deltas to the phone", async (t) => 
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  startBridge({
+  bridge = startBridge({
     printPairingQr: false,
     config: {
       relayUrl: `ws://127.0.0.1:${relayServer.address().port}`,
@@ -362,7 +488,14 @@ function createSecureDeviceStateDouble() {
   };
 }
 
-function createFakeCodexTransport() {
+function createFakeCodexTransport({
+  threadReadResult = {
+    conversationState: {
+      turns: [],
+      requests: [],
+    },
+  },
+} = {}) {
   const listeners = {};
   const sent = [];
   return {
@@ -376,12 +509,7 @@ function createFakeCodexTransport() {
       if (parsed.method === "thread/read") {
         listeners.message?.(JSON.stringify({
           id: parsed.id,
-          result: {
-            conversationState: {
-              turns: [],
-              requests: [],
-            },
-          },
+          result: threadReadResult,
         }));
       }
     },

@@ -12,7 +12,7 @@ val LocalThreadGitProjectRoot = staticCompositionLocalOf<String?> { null }
 /**
  * Main shell installs this to open **Repository diff** from assistant markdown taps on repo paths.
  */
-val LocalOpenRepoDiffForMarkdownLink = staticCompositionLocalOf<(String) -> Unit> { { } }
+val LocalOpenRepoDiffForMarkdownLink = staticCompositionLocalOf<(String, String?) -> Unit> { { _, _ -> } }
 
 /**
  * Decide when a tapped markdown URL should route to repo diff vs [androidx.compose.ui.platform.LocalUriHandler].
@@ -32,7 +32,7 @@ internal object RepoMarkdownFileLink {
         fun nameFrom(p: String): String =
             normalizeSlashes(File(p.trim()).name).substringBefore('#').substringBefore('?').trim()
 
-        val nm = nameFrom(path)
+        val nm = stripTrailingLineLocation(nameFrom(path))
         val extOk = hasKnownSourceExtension(nm)
 
         val looksRel = path.startsWith("./") || path.startsWith("../")
@@ -44,7 +44,7 @@ internal object RepoMarkdownFileLink {
 
     /** Last path segment (filename) — used for matching [GitRepoDiffRenderableRow.displayPath]. */
     fun canonicalFilenameQuery(decodedLink: String): String {
-        val path = normalizeSlashes(stripFileSchemeAndDecode(decodedLink.trim()))
+        val path = stripAnchorQueryAndLineLocation(normalizeSlashes(stripFileSchemeAndDecode(decodedLink.trim())))
         val seg =
             (
                 path
@@ -60,7 +60,33 @@ internal object RepoMarkdownFileLink {
         return seg.ifBlank { path }.trim()
     }
 
-    fun normalizePath(raw: String): String = normalizeSlashes(stripFileSchemeAndDecode(raw.trim()))
+    fun normalizePath(raw: String): String = stripAnchorQueryAndLineLocation(normalizeSlashes(stripFileSchemeAndDecode(raw.trim())))
+
+    fun previewPath(raw: String): String? {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return null
+        val lower = trimmed.lowercase()
+        if (lower.startsWith("http://") || lower.startsWith("https://")) return null
+        if (lower.startsWith("mailto:") || lower.startsWith("tel:")) return null
+        if ("://" in trimmed && !lower.startsWith("file:")) return null
+        val path =
+            normalizeSlashes(stripFileSchemeAndDecodeForPreview(trimmed))
+                .let(::stripAnchorQueryAndLineLocation)
+                .trim()
+        return path.takeIf { it.isNotEmpty() }
+    }
+
+    fun previewWorkspaceCwd(rawPreviewPath: String): String? {
+        val path = normalizeSlashes(rawPreviewPath.trim())
+        if (path.isEmpty()) return null
+        val absolute =
+            path.startsWith("/") ||
+                Regex("^[A-Za-z]:/").containsMatchIn(path) ||
+                path.startsWith("//")
+        if (!absolute) return null
+        return path.substringBeforeLast('/', missingDelimiterValue = "")
+            .takeIf { it.isNotBlank() }
+    }
 
     /** Row label may be truncated or absolute; matching is path-segment tolerant. */
     fun rowMatchesQuery(displayPath: String, canonicalQuery: String): Boolean {
@@ -96,7 +122,41 @@ internal object RepoMarkdownFileLink {
         return s
     }
 
+    private fun stripFileSchemeAndDecodeForPreview(raw: String): String {
+        var s = raw.trim()
+        if (s.startsWith("file://", ignoreCase = true)) {
+            runCatching { java.net.URI(s).path }
+                .getOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { return dropWindowsUriSlash(decodePercentEscapes(it)) }
+        }
+        if (s.startsWith("file:", ignoreCase = true)) {
+            s = s.substringAfter(':').trim()
+        }
+        return dropWindowsUriSlash(decodePercentEscapes(s))
+    }
+
+    private fun decodePercentEscapes(value: String): String =
+        try {
+            if (value.contains('%')) {
+                java.net.URLDecoder.decode(value, Charsets.UTF_8.name())
+            } else {
+                value
+            }
+        } catch (_: Exception) {
+            value
+        }
+
+    private fun dropWindowsUriSlash(value: String): String =
+        if (Regex("^/[A-Za-z]:/").containsMatchIn(value)) value.drop(1) else value
+
     private fun normalizeSlashes(value: String): String = value.trim().replace('\\', '/')
+
+    private fun stripTrailingLineLocation(value: String): String =
+        value.trim().replace(Regex(""":\d+(?::\d+)?$"""), "")
+
+    private fun stripAnchorQueryAndLineLocation(value: String): String =
+        stripTrailingLineLocation(value.substringBefore('#').substringBefore('?'))
 
     private fun hasKnownSourceExtension(filename: String): Boolean {
         val l = filename.lowercase().trim()
