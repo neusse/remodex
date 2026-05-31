@@ -149,3 +149,16 @@ internal fun formatTurnSendError(e: Throwable): String =
         is CodexServiceError -> e.message ?: e.javaClass.simpleName
         else -> e.message ?: e.javaClass.simpleName
     }
+
+internal fun formatVoiceTranscriptionError(
+    e: Throwable,
+    fallbackMessage: String,
+): String =
+    when (e) {
+        is CodexServiceError.RpcFailure ->
+            e.rpcError.message.trim().ifEmpty { fallbackMessage }
+        is CodexServiceError ->
+            e.message?.trim()?.takeIf { it.isNotEmpty() } ?: fallbackMessage
+        else ->
+            e.message?.trim()?.takeIf { it.isNotEmpty() } ?: fallbackMessage
+    }

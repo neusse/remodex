@@ -13,7 +13,9 @@ import com.remodex.mobile.core.model.CodexReviewTarget
 import com.remodex.mobile.core.model.CodexServiceTier
 import com.remodex.mobile.core.model.CodexTurnMention
 import com.remodex.mobile.core.model.CodexTurnSkillMention
+import com.remodex.mobile.core.model.CodexPairingQRPayload
 import com.remodex.mobile.core.model.CodexThread
+import com.remodex.mobile.core.model.CodexTrustedMacRecord
 import com.remodex.mobile.core.model.JSONValue
 import com.remodex.mobile.core.model.PendingApprovalDecision
 import com.remodex.mobile.core.model.PendingApprovalRequest
@@ -109,6 +111,19 @@ interface CodexRepository {
 
     /** Recoverable npm / pairing prompts from the service layer (bridge upgrade, unsupported runtime fields). */
     val bridgeUpdatePrompt: StateFlow<CodexBridgeUpdatePrompt?>
+
+    /** Trusted Mac registry records surfaced for My Devices UI. */
+    val trustedDevices: StateFlow<List<CodexTrustedMacRecord>>
+
+    val switchingDeviceId: StateFlow<String?>
+
+    val deviceSwitchNotice: StateFlow<String?>
+
+    val currentTrustedMacDeviceId: StateFlow<String?>
+
+    val previousTrustedMacDeviceId: StateFlow<String?>
+
+    val relayMacDeviceId: StateFlow<String?>
 
     /**
      * Relay `x-role`: `mac` (bridge) or `iphone` (mobile client). When [role] is null, Android sends
@@ -216,13 +231,22 @@ interface CodexRepository {
         throw UnsupportedOperationException("deleteLocalThreadGroup is not implemented by this repository")
 
     /**
-     * WAV clip → transcript: `voice/resolveAuth` on the bridge, then ChatGPT `/backend-api/transcribe` (J.7e).
-     * No microphone UI; callers supply bytes + duration for preflight.
+     * WAV clip to transcript. Current bridges own `voice/transcribe`; older bridges fall back to
+     * `voice/resolveAuth` plus the legacy direct ChatGPT upload.
      */
     suspend fun transcribeBridgeVoiceWav(
         wavBytes: ByteArray,
         durationSeconds: Double,
     ): String
+
+    suspend fun loadComposerDraft(threadId: String): String = ""
+
+    suspend fun saveComposerDraft(
+        threadId: String,
+        draft: String,
+    ) = Unit
+
+    suspend fun clearComposerDraft(threadId: String) = saveComposerDraft(threadId, "")
 
     /**
      * Creates a thread via `thread/start` (parity with iOS `startThreadImpl`).
@@ -322,4 +346,17 @@ interface CodexRepository {
     /** Progress events for in-flight `git/runStackedAction` (`git/stackedAction/progress`). */
     val gitStackedActionProgress: Flow<GitStackedActionProgressEvent>
         get() = emptyFlow()
+
+    suspend fun switchToTrustedDevice(deviceId: String) = Unit
+
+    suspend fun switchToScannedDevice(payload: CodexPairingQRPayload) = Unit
+
+    suspend fun cancelDeviceSwitch() = Unit
+
+    fun setDeviceMenuVisible(
+        deviceId: String,
+        visible: Boolean,
+    ) = Unit
+
+    fun forgetTrustedDevice(deviceId: String) = Unit
 }

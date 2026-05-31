@@ -27,17 +27,21 @@ fun RootScreen(modifier: Modifier = Modifier) {
                 onFinish = viewModel::finishOnboarding,
                 modifier = modifier,
             )
-        RootPhase.PairingScan ->
+        RootPhase.PairingScan,
+        RootPhase.PairingCode,
+        ->
             QrScannerScreen(
                 repository = repository,
                 onBack = viewModel::closePairingScanner,
                 onPairingComplete = viewModel::notifyPairingSuccess,
+                openManualPairingInitially = phase == RootPhase.PairingCode,
                 modifier = modifier,
             )
         RootPhase.Main ->
             MainShell(
                 viewModel = viewModel,
                 onOpenPairingScanner = viewModel::openPairingScanner,
+                onOpenPairingCode = viewModel::openPairingCode,
                 modifier = modifier,
             )
     }

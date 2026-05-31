@@ -21,6 +21,7 @@ import com.remodex.mobile.core.model.PendingStructuredInputRequest
 import com.remodex.mobile.core.model.RPCMessage
 import com.remodex.mobile.core.model.ThreadHistoryPaginationState
 import com.remodex.mobile.core.transport.ConnectionState
+import com.remodex.mobile.services.EmptyTrustedDeviceCodexRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
@@ -94,7 +95,7 @@ class ThreadListSyncPaginationTest {
         )
 }
 
-private abstract class TestRepository : CodexRepository {
+private abstract class TestRepository : CodexRepository, EmptyTrustedDeviceCodexRepository {
     override val isSessionReady: StateFlow<Boolean> = MutableStateFlow(true)
     override val connectionState: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.Connected)
     override val threads: StateFlow<List<CodexThread>> = MutableStateFlow(emptyList())

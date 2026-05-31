@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -83,6 +84,7 @@ fun QrScannerScreen(
     repository: CodexRepository,
     onBack: () -> Unit,
     onPairingComplete: () -> Unit,
+    openManualPairingInitially: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -100,6 +102,12 @@ fun QrScannerScreen(
     var scannerResetNonce by remember { mutableStateOf(0) }
     var manualPairingDialogVisible by remember { mutableStateOf(false) }
     var manualPairingText by remember { mutableStateOf("") }
+
+    LaunchedEffect(openManualPairingInitially) {
+        if (openManualPairingInitially) {
+            manualPairingDialogVisible = true
+        }
+    }
 
     fun hasCameraPermission(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==

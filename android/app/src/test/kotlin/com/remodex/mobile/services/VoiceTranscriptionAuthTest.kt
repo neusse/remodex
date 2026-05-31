@@ -44,6 +44,25 @@ class VoiceTranscriptionAuthTest {
     }
 
     @Test
+    fun parseBridgeTranscriptionTextFromTopLevelObject() {
+        val text =
+            parseVoiceTranscriptionTextFromResult(
+                JSONValue.Obj(mapOf("text" to JSONValue.Str("  hello  "))),
+            )
+        assertEquals("hello", text)
+    }
+
+    @Test
+    fun voiceTranscribeParamsMatchBridgeContract() {
+        val params = voiceTranscribeParams(byteArrayOf(1, 2, 3), durationSeconds = 1.234).map
+
+        assertEquals("audio/wav", params["mimeType"]?.stringValue)
+        assertEquals("AQID", params["audioBase64"]?.stringValue)
+        assertEquals(24_000L, params["sampleRateHz"]?.longValue)
+        assertEquals(1234L, params["durationMs"]?.longValue)
+    }
+
+    @Test
     fun rpcClassificationMatchesIosFixture() {
         val rpc =
             RPCError(
@@ -53,6 +72,31 @@ class VoiceTranscriptionAuthTest {
                 data = null,
             )
         assertTrue(rpcIndicatesUnsupportedVoiceBridgeAuth(rpc))
+    }
+
+    @Test
+    fun rpcClassificationHandlesUnsupportedVoiceTranscribe() {
+        val rpc =
+            RPCError(
+                code = -32601,
+                message = "Method not found: voice/transcribe",
+                data = null,
+            )
+        assertTrue(rpcIndicatesUnsupportedVoiceBridgeAuth(rpc))
+    }
+
+    @Test
+    fun rpcClassificationHandlesProviderRejectedVoiceTranscribe() {
+        val rpc =
+            RPCError(
+                code = -32000,
+                message = "Your ChatGPT login has expired. Sign in again.",
+                data =
+                    JSONValue.Obj(
+                        mapOf("errorCode" to JSONValue.Str("auth_rejected")),
+                    ),
+            )
+        assertTrue(rpcIndicatesProviderRejectedVoiceTranscription(rpc))
     }
 
     @Test

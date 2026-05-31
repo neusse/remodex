@@ -24,7 +24,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.Archive
-import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
@@ -46,7 +46,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -57,7 +56,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composables.icons.lucide.R as LucideR
 import com.remodex.mobile.R
-import com.remodex.mobile.core.config.FeatureFlags
 import com.remodex.mobile.core.model.CodexThread
 import com.remodex.mobile.core.model.GitWorktreeChangeTransferMode
 import com.remodex.mobile.core.model.TurnGitPreflightOperation
@@ -71,6 +69,7 @@ import com.remodex.mobile.data.GitBranchDisplayMapper
 import com.remodex.mobile.data.WorktreeFlowCoordinator
 import com.remodex.mobile.data.WorktreeNewChatDefaults
 import com.remodex.mobile.data.loadGitBranchesWithStatus
+import com.remodex.mobile.ui.draft.NewChatDraftSource
 import com.remodex.mobile.ui.shared.ThreadRenameDialog
 import com.remodex.mobile.ui.theme.RemodexDropdownMenu
 import kotlinx.coroutines.launch
@@ -85,11 +84,11 @@ fun SidebarScreen(
     activeChatMetadata: SidebarActiveChatMetadata? = null,
     onOpenArchivedChats: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
-    onOpenTesterHq: () -> Unit = {},
     onOpenTerminal: () -> Unit = {},
     onOpenPairingScanner: () -> Unit = {},
+    onOpenMyDevices: () -> Unit = {},
+    onOpenNewChatDraft: (NewChatDraftSource, String?) -> Unit = { _, _ -> },
     onThreadSelected: suspend () -> Unit = {},
-    onTesterHqButtonPositioned: (LayoutCoordinates) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val threads by repository.threads.collectAsStateWithLifecycle()
@@ -162,20 +161,17 @@ fun SidebarScreen(
             groups.filter { it.kind == SidebarThreadGroupKind.Project }.map { it.id }.toSet()
         }
 
-    fun startQuickCloudChat() {
+    fun openNewChatDraft(
+        source: NewChatDraftSource,
+        preferredProjectPath: String? = null,
+    ) {
         if (newChatBusy || worktreeChatBusy) return
         newChatError = null
-        newChatBusy = true
-        scope.launch {
-            try {
-                startSidebarNewChat(repository, cwd = null)
-                onThreadSelected()
-            } catch (e: Exception) {
-                newChatError = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
-            } finally {
-                newChatBusy = false
-            }
-        }
+        onOpenNewChatDraft(source, preferredProjectPath)
+    }
+
+    fun startQuickCloudChat() {
+        openNewChatDraft(NewChatDraftSource.generalChat, preferredProjectPath = null)
     }
 
     fun startManagedWorktreeChat(
@@ -278,12 +274,10 @@ fun SidebarScreen(
                     onQuickCloudChat = { startQuickCloudChat() },
                     onOpenArchivedChats = onOpenArchivedChats,
                     onRefreshThreads = { scope.launch { runCatching { repository.refreshThreads() } } },
+                    onOpenConnections = onOpenMyDevices,
                 ),
-            onOpenDesktop = onOpenPairingScanner,
             onOpenSettings = onOpenSettings,
-            showTesterHq = FeatureFlags.betaEngagementEnabled,
-            onOpenTesterHq = onOpenTesterHq,
-            onTesterHqButtonPositioned = onTesterHqButtonPositioned,
+            onOpenMyDevices = onOpenMyDevices,
         )
         SidebarSearch(
             query = query,
@@ -355,10 +349,10 @@ fun SidebarScreen(
                         onNewChatInProject =
                             if (group.kind == SidebarThreadGroupKind.Project && group.projectPath != null) {
                                 {
-                                    newChatError = null
-                                    projectPickerInitialPath = group.projectPath
-                                    projectPickerFoldersCollapsed = true
-                                    showProjectPicker = true
+                                    openNewChatDraft(
+                                        NewChatDraftSource.folderChat,
+                                        preferredProjectPath = group.projectPath,
+                                    )
                                 }
                             } else {
                                 null
@@ -471,10 +465,16 @@ fun SidebarScreen(
                 chatBusy = newChatBusy,
                 onTerminal = onOpenTerminal,
                 onChat = {
-                    newChatError = null
-                    projectPickerInitialPath = WorktreeNewChatDefaults.baseProjectPath(activeId, threads)
-                    projectPickerFoldersCollapsed = false
-                    showProjectPicker = true
+                    val target =
+                        sidebarFloatingChatDraftTarget(
+                            listTab = listTab,
+                            activeThreadId = activeId,
+                            threads = threads,
+                        )
+                    openNewChatDraft(
+                        target.source,
+                        preferredProjectPath = target.preferredProjectPath,
+                    )
                 },
                 colors = sidebarColors,
                 modifier =
@@ -716,7 +716,13 @@ fun SidebarScreen(
                 projectPickerFoldersCollapsed = false
             },
             onStartBusyChange = { newChatBusy = it },
-            onStartThread = { cwd -> startSidebarNewChat(repository, cwd) },
+            onStartThread = { cwd ->
+                openNewChatDraft(
+                    NewChatDraftSource.generalChat,
+                    preferredProjectPath = cwd,
+                )
+                showProjectPicker = false
+            },
             initialFoldersCollapsed = projectPickerFoldersCollapsed,
             threads = threads,
             activeThreadId = activeId,
@@ -831,6 +837,29 @@ private data class PendingSidebarWorktreeChat(
     val baseBranch: String,
     val changeTransfer: GitWorktreeChangeTransferMode,
 )
+
+internal data class SidebarFloatingChatDraftTarget(
+    val source: NewChatDraftSource,
+    val preferredProjectPath: String?,
+)
+
+internal fun sidebarFloatingChatDraftTarget(
+    listTab: SidebarListTab,
+    activeThreadId: String?,
+    threads: List<CodexThread>,
+): SidebarFloatingChatDraftTarget =
+    when (listTab) {
+        SidebarListTab.Chats ->
+            SidebarFloatingChatDraftTarget(
+                source = NewChatDraftSource.generalChat,
+                preferredProjectPath = null,
+            )
+        SidebarListTab.Projects ->
+            SidebarFloatingChatDraftTarget(
+                source = NewChatDraftSource.generalChat,
+                preferredProjectPath = WorktreeNewChatDefaults.baseProjectPath(activeThreadId, threads),
+            )
+    }
 
 @Composable
 private fun RepoHeader(
@@ -1035,12 +1064,12 @@ private fun ShowAllRow(
 private fun SidebarThreadGroup.leadingIcon(): ImageVector =
     when (kind) {
         SidebarThreadGroupKind.Archived -> Icons.Outlined.Archive
-        SidebarThreadGroupKind.Chats -> Icons.Outlined.Cloud
+        SidebarThreadGroupKind.Chats -> Icons.Outlined.ChatBubbleOutline
         SidebarThreadGroupKind.Project -> {
             val t = threads.firstOrNull()
             when {
                 t == null -> Icons.Outlined.Folder
-                t.normalizedProjectPath == null -> Icons.Outlined.Cloud
+                t.normalizedProjectPath == null -> Icons.Outlined.ChatBubbleOutline
                 t.isManagedWorktreeProject -> Icons.Outlined.AccountTree
                 else -> Icons.Outlined.Folder
             }

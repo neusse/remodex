@@ -45,6 +45,7 @@ import com.remodex.mobile.R
 import com.remodex.mobile.core.config.FeatureFlags
 import com.remodex.mobile.core.transport.ConnectionState
 import com.remodex.mobile.data.CodexRepository
+import com.remodex.mobile.ui.draft.NewChatDraftRoute
 import com.remodex.mobile.ui.home.RootReconnectRecoveryAction
 import com.remodex.mobile.ui.home.RootReconnectUiState
 import com.remodex.mobile.ui.navigation.AppRoutes
@@ -145,15 +146,6 @@ fun SidebarDrawerContent(
                         navController.navigate(AppRoutes.Settings)
                     }
                 },
-                onOpenTesterHq = {
-                    drawerScope.launch {
-                        showTesterHqCoachmark = false
-                        closeDrawer()
-                        if (FeatureFlags.betaEngagementEnabled) {
-                            navController.navigate(AppRoutes.TesterHq)
-                        }
-                    }
-                },
                 onOpenTerminal = {
                     drawerScope.launch {
                         closeDrawer()
@@ -166,8 +158,27 @@ fun SidebarDrawerContent(
                         onOpenPairingScanner()
                     }
                 },
+                onOpenMyDevices = {
+                    drawerScope.launch {
+                        closeDrawer()
+                        navController.navigate(AppRoutes.MyDevices)
+                    }
+                },
+                onOpenNewChatDraft = { source, preferredProjectPath ->
+                    drawerScope.launch {
+                        closeDrawer()
+                        repository.setActiveThreadId(null)
+                        val route = NewChatDraftRoute.create(source, preferredProjectPath)
+                        navController.navigate(
+                            AppRoutes.newChatDraftRoute(
+                                routeId = route.id,
+                                source = route.source,
+                                preferredProjectPath = route.preferredProjectPath,
+                            ),
+                        )
+                    }
+                },
                 onThreadSelected = closeDrawer,
-                onTesterHqButtonPositioned = { trophyLayoutCoords = it },
                 modifier =
                     Modifier
                         .weight(1f)

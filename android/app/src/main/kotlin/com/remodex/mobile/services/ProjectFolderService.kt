@@ -94,6 +94,22 @@ class ProjectFolderService(
             ?: throw CodexServiceError.InvalidInput("project/createDirectory response missing path")
     }
 
+    suspend fun createRootlessChatRoot(promptHint: String?): String? {
+        val params =
+            promptHint
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { mapOf("promptHint" to JSONValue.Str(it)) }
+                ?: emptyMap()
+        val response =
+            runCatching {
+                repository.sendRequest("project/createRootlessChatRoot", JSONValue.Obj(params))
+            }.getOrElse { error ->
+                throw error
+            }
+        return response.result?.objectValue?.get("path")?.stringValue?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
     private suspend fun listDirectoryWithFsRpc(path: String): CodexProjectDirectoryListing {
         val normalizedPath = path.trim()
         val response =

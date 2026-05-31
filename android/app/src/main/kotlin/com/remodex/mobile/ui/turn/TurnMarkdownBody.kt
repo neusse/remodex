@@ -68,14 +68,15 @@ fun TurnMarkdownBody(
     val scope = rememberCoroutineScope()
     val segments = TurnMarkdownRenderCache.fenceSegments(displayMarkdown)
     val dispatchRepoDiff = LocalOpenRepoDiffForMarkdownLink.current
+    val threadProjectRoot = LocalThreadGitProjectRoot.current
     val defaultUriHandler = LocalUriHandler.current
     val repoFileMarkdownUriHandler =
-        remember(dispatchRepoDiff, defaultUriHandler) {
+        remember(dispatchRepoDiff, defaultUriHandler, threadProjectRoot) {
             object : UriHandler {
                 override fun openUri(uri: String) {
                     val trimmed = uri.trim()
-                    if (RepoMarkdownFileLink.looksLikeLinkToLocalRepoFile(trimmed)) {
-                        dispatchRepoDiff(trimmed)
+                    if (RepoMarkdownFileLink.previewPath(trimmed) != null) {
+                        dispatchRepoDiff(trimmed, threadProjectRoot)
                     } else if (MarkdownUrlPolicy.isAllowedLink(trimmed)) {
                         runCatching { defaultUriHandler.openUri(trimmed) }
                     }

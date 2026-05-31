@@ -37,6 +37,7 @@ import com.remodex.mobile.core.model.UserBubbleColor
 import com.remodex.mobile.ui.LocalUserBubbleColor
 import com.remodex.mobile.ui.agent.FileEditRow
 import com.remodex.mobile.ui.agent.ToolCallRow
+import com.remodex.mobile.ui.theme.accentBackground
 import com.remodex.mobile.ui.theme.bubbleBackground
 import com.remodex.mobile.ui.theme.bubbleForeground
 import com.remodex.mobile.ui.theme.isAgentLightChrome
@@ -111,7 +112,7 @@ fun TurnMessageRow(
         if (message.role == CodexMessageRole.user) {
             userBubbleColor.mentionForeground(colors, isLightChrome, onBubble)
         } else {
-            onBubble
+            userBubbleColor.accentBackground(colors, isLightChrome)
         }
 
     Column(

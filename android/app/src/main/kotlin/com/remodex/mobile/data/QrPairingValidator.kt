@@ -43,6 +43,7 @@ private data class PairingCodeResolveResponse(
     val sessionId: String? = null,
     val macDeviceId: String? = null,
     val macIdentityPublicKey: String? = null,
+    val displayName: String? = null,
     val expiresAt: Long? = null,
     val error: String? = null,
     val code: String? = null,
@@ -247,6 +248,7 @@ suspend fun resolvePairingCode(
                         macDeviceId = macDeviceId,
                         macIdentityPublicKey = macIdentityPublicKey,
                         expiresAt = expiresAt,
+                        displayName = decoded.displayName?.trim()?.takeIf { it.isNotEmpty() },
                     ),
                 )
             }

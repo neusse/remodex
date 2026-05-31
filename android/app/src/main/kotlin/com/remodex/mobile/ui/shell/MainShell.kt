@@ -81,6 +81,7 @@ import com.remodex.mobile.data.remodexResolveCommitMessage
 import com.remodex.mobile.services.DesktopHandoffService
 import com.remodex.mobile.services.GitActionsError
 import com.remodex.mobile.services.GitActionsService
+import com.remodex.mobile.services.WorkspaceTextFileService
 import com.remodex.mobile.ui.LocalCodexRepository
 import com.remodex.mobile.ui.agent.ConversationHeader
 import com.remodex.mobile.ui.agent.SidebarDrawerContent
@@ -92,10 +93,13 @@ import com.remodex.mobile.ui.home.RootViewModel
 import com.remodex.mobile.ui.home.ThreadCompletionBanner
 import com.remodex.mobile.ui.navigation.AppNavHost
 import com.remodex.mobile.ui.navigation.AppRoutes
+import com.remodex.mobile.ui.pet.PetCompanionOverlay
 import com.remodex.mobile.ui.sidebar.SidebarActiveChatMetadata
 import com.remodex.mobile.ui.sidebar.rememberSidebarColorPalette
 import com.remodex.mobile.ui.turn.LocalOpenRepoDiffForMarkdownLink
 import com.remodex.mobile.ui.turn.RepoMarkdownFileLink
+import com.remodex.mobile.ui.turn.WorkspaceTextFilePreviewDialog
+import com.remodex.mobile.ui.turn.WorkspaceTextFilePreviewRequest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
@@ -115,9 +119,11 @@ private object GitInitPromptSession {
 fun MainShell(
     viewModel: RootViewModel,
     onOpenPairingScanner: () -> Unit,
+    onOpenPairingCode: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val repository = LocalCodexRepository.current
+    val workspaceTextFileService = remember(repository) { WorkspaceTextFileService(repository) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val navController = rememberNavController()
@@ -164,6 +170,7 @@ fun MainShell(
     var repoDiffSheetFullError by remember { mutableStateOf<String?>(null) }
     var repoDiffPrefetchRequestId by remember { mutableStateOf(0) }
     var repoDiffMarkdownFocusQuery by remember { mutableStateOf<String?>(null) }
+    var workspaceTextFilePreviewRequest by remember { mutableStateOf<WorkspaceTextFilePreviewRequest?>(null) }
     var gitActionBusy by remember { mutableStateOf(false) }
     var gitActionError by remember { mutableStateOf<String?>(null) }
     var gitActionProgressMessage by remember { mutableStateOf<String?>(null) }
@@ -389,28 +396,21 @@ fun MainShell(
         }
     }
 
-    fun openRepoDiffSheetFromMarkdown(link: String) {
-        if (repoDiffTotals?.hasChanges != true || !showGitControls || activeThreadId == null) return
-        val q = RepoMarkdownFileLink.canonicalFilenameQuery(link)
-        repoDiffMarkdownFocusQuery = q
-        val lastRows = RepoDiffLastTurnAggregator.fileRowsFromLastTurn(threadMessages)
-        repoDiffSheetLastTurnRows = lastRows
-        repoDiffSheetScope =
-            if (lastRows.any { RepoMarkdownFileLink.rowMatchesQuery(it.path, q) }) {
-                GitRepoDiffScope.LastTurn
-            } else {
-                GitRepoDiffScope.FullWorkingTree
-            }
-        repoDiffSheetFullError = null
-        enqueueRepoDiffFullTreePrefetch()
-        showRepoDiffSheet = true
-        scope.launch {
-            AppContainer.betaEngagementRepository.recordMissionEvent(
-                eventType = "repo_diff_reviewed",
-                screen = "git",
-                refreshAfter = false,
+    fun openRepoDiffSheetFromMarkdown(
+        link: String,
+        threadProjectRoot: String?,
+    ) {
+        val previewPath = RepoMarkdownFileLink.previewPath(link) ?: return
+        val cwdFromAbsoluteLink = RepoMarkdownFileLink.previewWorkspaceCwd(previewPath)
+        workspaceTextFilePreviewRequest =
+            WorkspaceTextFilePreviewRequest(
+                path = previewPath,
+                cwd =
+                    cwdFromAbsoluteLink
+                        ?: threadProjectRoot?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: activeThread?.cwd?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: gitCwd,
             )
-        }
     }
 
     LaunchedEffect(activeThreadId, gitToolbarRefreshNonce) {
@@ -1065,6 +1065,7 @@ fun MainShell(
                         onReconnectSavedPairing = viewModel::reconnectSavedPairingManually,
                         onWakeSavedComputer = viewModel::wakeSavedComputerDisplay,
                         onOpenPairingScanner = onOpenPairingScanner,
+                        onOpenPairingCode = onOpenPairingCode,
                         onGitContextChanged = { gitToolbarRefreshNonce++ },
                         modifier =
                             Modifier
@@ -1149,6 +1150,13 @@ fun MainShell(
                                 .padding(top = 92.dp),
                     )
                 }
+                PetCompanionOverlay(
+                    repository = repository,
+                    store = AppContainer.petCompanionStore,
+                    isInteractionEnabled = currentRoute == AppRoutes.Home,
+                    bottomExclusionHeight = if (showShellHeader) 120.dp else 16.dp,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
         }
     }
@@ -1206,6 +1214,21 @@ fun MainShell(
             repoDiffMarkdownFocusQuery = null
         },
     )
+
+    workspaceTextFilePreviewRequest?.let { request ->
+        val liveCwd = activeThread?.cwd?.trim()?.takeIf { it.isNotEmpty() } ?: gitCwd
+        val effectiveRequest =
+            if (request.cwd.isNullOrBlank() && !liveCwd.isNullOrBlank()) {
+                request.copy(cwd = liveCwd)
+            } else {
+                request
+            }
+        WorkspaceTextFilePreviewDialog(
+            request = effectiveRequest,
+            service = workspaceTextFileService,
+            onDismiss = { workspaceTextFilePreviewRequest = null },
+        )
+    }
 
     GitActionBottomSheet(
         visible = gitActionSheetMode != null,

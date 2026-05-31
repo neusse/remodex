@@ -355,7 +355,7 @@ internal object HistoryMessageMerge {
             assistantPhase = incoming.assistantPhase ?: existing.assistantPhase,
             turnId = incoming.turnId ?: existing.turnId,
             itemId = incoming.itemId ?: existing.itemId,
-            isStreaming = existing.isStreaming || incoming.isStreaming,
+            isStreaming = incoming.isStreaming,
             deliveryState = CodexMessageDeliveryState.confirmed,
             attachments =
                 if (incoming.attachments.isNotEmpty()) {

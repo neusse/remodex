@@ -23,7 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 internal class MinimalSendRepository(
     private val onSend: suspend (String, JSONValue?) -> RPCMessage,
-) : CodexRepository {
+) : CodexRepository, EmptyTrustedDeviceCodexRepository {
     override val isSessionReady: StateFlow<Boolean> = MutableStateFlow(true)
     override val connectionState: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.Connected)
     override val threads: StateFlow<List<CodexThread>> = MutableStateFlow(emptyList())

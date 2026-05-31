@@ -38,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -74,12 +75,17 @@ import com.remodex.mobile.core.model.ContextWindowUsage
 import com.remodex.mobile.core.model.CodexRateLimitBucket
 import com.remodex.mobile.core.notification.LocalNotificationSettings
 import com.remodex.mobile.core.readRemodexAppVersionName
+import com.remodex.mobile.core.model.RelayHealthSnapshot
 import com.remodex.mobile.core.transport.ConnectionState
 import com.remodex.mobile.data.AppFontPreferences
 import com.remodex.mobile.data.CodexRepository
 import com.remodex.mobile.data.LanguagePreferences
+import com.remodex.mobile.data.PetCompanionStore
 import com.remodex.mobile.data.ThemePreferences
 import com.remodex.mobile.data.UserBubblePreferences
+import com.remodex.mobile.services.RelayHealthClient
+import com.remodex.mobile.services.SubscriptionService
+import com.remodex.mobile.services.CodexService
 import com.remodex.mobile.ui.shared.UsageStatusSummary
 import com.remodex.mobile.ui.theme.remodexScreenTopAppBarColors
 import com.remodex.mobile.ui.theme.swatchColor
@@ -329,6 +335,10 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.titleMedium,
             )
             SettingsConnectionStatus(conn = conn)
+            SettingsRelayHealthSection(
+                relayHealthClient = AppContainer.relayHealthClient,
+                localRelayHostOverride = localRelayHostOverride,
+            )
             OutlinedTextField(
                 value = localRelayHostOverride,
                 onValueChange = {
@@ -341,6 +351,15 @@ fun SettingsScreen(
                 singleLine = true,
             )
             SettingsNotificationSection(context = context)
+
+            SettingsPetCompanionSection(
+                repository = repository,
+                petStore = AppContainer.petCompanionStore,
+            )
+
+            if (AppContainer.subscriptionService.isConfigured) {
+                SettingsSubscriptionSection(subscriptionService = AppContainer.subscriptionService)
+            }
 
             TerminalWindowsSetupGuide()
 
@@ -751,6 +770,232 @@ private fun SettingsConnectionStatus(conn: ConnectionState) {
         text = text,
         style = MaterialTheme.typography.bodyMedium,
     )
+}
+
+@Composable
+private fun SettingsPetCompanionSection(
+    repository: CodexRepository,
+    petStore: PetCompanionStore,
+) {
+    val isEnabled by petStore.isEnabled.collectAsStateWithLifecycle()
+    val availablePets by petStore.availablePets.collectAsStateWithLifecycle()
+    val selectedPetId by petStore.selectedPetId.collectAsStateWithLifecycle()
+    val isLoading by petStore.isLoading.collectAsStateWithLifecycle()
+    val errorMessage by petStore.errorMessage.collectAsStateWithLifecycle()
+    val conn by repository.connectionState.collectAsStateWithLifecycle()
+    val sessionReady by repository.isSessionReady.collectAsStateWithLifecycle()
+    val codexService = repository as? CodexService
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(conn, sessionReady, isEnabled, codexService) {
+        if (conn is ConnectionState.Connected && sessionReady && isEnabled && codexService != null) {
+            petStore.loadPetsIfNeeded(codexService)
+            petStore.loadSelectedPet(codexService)
+        }
+    }
+
+    Text(
+        text = stringResource(R.string.settings_section_pet),
+        style = MaterialTheme.typography.titleMedium,
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.settings_pet_companion_title),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                text = stringResource(R.string.settings_beta_badge),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier =
+                    Modifier
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            shape = CircleShape,
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+        Switch(
+            checked = isEnabled,
+            onCheckedChange = { enabled ->
+                petStore.setEnabled(enabled)
+                if (enabled && codexService != null && conn is ConnectionState.Connected && sessionReady) {
+                    scope.launch {
+                        petStore.loadPetsIfNeeded(codexService)
+                        petStore.loadSelectedPet(codexService)
+                    }
+                }
+            },
+        )
+    }
+    if (isEnabled) {
+        when {
+            isLoading -> {
+                Text(
+                    text = stringResource(R.string.settings_pet_loading),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            availablePets.isEmpty() -> {
+                Text(
+                    text = stringResource(R.string.settings_pet_empty),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            else -> {
+                availablePets.forEach { pet ->
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = pet.id == selectedPetId,
+                                    onClick = {
+                                        petStore.selectPet(pet.id)
+                                        if (codexService != null && conn is ConnectionState.Connected && sessionReady) {
+                                            scope.launch { petStore.loadSelectedPet(codexService) }
+                                        }
+                                    },
+                                    role = Role.RadioButton,
+                                )
+                                .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = pet.id == selectedPetId,
+                            onClick = null,
+                        )
+                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                            Text(text = pet.displayName, style = MaterialTheme.typography.bodyLarge)
+                            pet.description?.takeIf { it.isNotBlank() }?.let { description ->
+                                Text(
+                                    text = description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        TextButton(
+            onClick = {
+                if (codexService != null && conn is ConnectionState.Connected && sessionReady) {
+                    scope.launch { petStore.refreshPets(codexService) }
+                }
+            },
+            enabled = !isLoading && conn is ConnectionState.Connected && sessionReady,
+        ) {
+            Text(stringResource(R.string.settings_pet_refresh))
+        }
+    }
+}
+
+@Composable
+private fun SettingsSubscriptionSection(
+    subscriptionService: SubscriptionService,
+) {
+    val context = LocalContext.current
+    var redemptionMessage by remember { mutableStateOf<String?>(null) }
+    Text(
+        text = stringResource(R.string.settings_section_subscription),
+        style = MaterialTheme.typography.titleMedium,
+    )
+    TextButton(
+        onClick = {
+            val intent = subscriptionService.createRedeemIntent()
+            if (intent != null) {
+                runCatching {
+                    context.startActivity(intent)
+                    val synced = subscriptionService.syncPurchasesAfterOfferCodeRedemption()
+                    redemptionMessage =
+                        if (synced) {
+                            null
+                        } else {
+                            context.getString(R.string.settings_redeem_code_manual_refresh)
+                        }
+                }
+            }
+        },
+    ) {
+        Text(stringResource(R.string.settings_redeem_code))
+    }
+    redemptionMessage?.let { message ->
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun SettingsRelayHealthSection(
+    relayHealthClient: RelayHealthClient,
+    localRelayHostOverride: String,
+) {
+    var relayHealth by remember { mutableStateOf<RelayHealthSnapshot?>(null) }
+    var refreshNonce by remember { mutableStateOf(0) }
+
+    LaunchedEffect(localRelayHostOverride, refreshNonce) {
+        relayHealth = relayHealthClient.fetchHealth(localRelayHostOverride)
+    }
+
+    Text(
+        text = stringResource(R.string.settings_relay_health_title),
+        style = MaterialTheme.typography.titleMedium,
+    )
+    TextButton(onClick = { refreshNonce++ }) {
+        Text(stringResource(R.string.settings_relay_health_refresh))
+    }
+    when {
+        relayHealth == null -> {
+            Text(
+                text = stringResource(R.string.settings_relay_health_unavailable),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        relayHealth?.ok == true -> {
+            Text(
+                text = stringResource(R.string.settings_relay_health_ok),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            relayHealth?.relay?.sessionsWithClients?.let { count ->
+                Text(
+                    text = stringResource(R.string.settings_relay_health_clients, count),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        else -> {
+            Text(
+                text = stringResource(R.string.settings_relay_health_failed),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
 }
 
 private fun settingsThemeTitleRes(option: AppThemePreference): Int =

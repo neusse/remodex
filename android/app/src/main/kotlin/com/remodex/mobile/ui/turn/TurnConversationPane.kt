@@ -37,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -74,7 +75,6 @@ import com.remodex.mobile.core.model.CodexImageAttachment
 import com.remodex.mobile.core.model.CodexMessageKind
 import com.remodex.mobile.core.model.CodexMessageRole
 import com.remodex.mobile.core.model.CodexThread
-import com.remodex.mobile.core.error.CodexServiceError
 import com.remodex.mobile.core.model.GitBranchesWithStatusResult
 import com.remodex.mobile.core.model.CodexModelOption
 import com.remodex.mobile.core.model.CodexPluginMetadata
@@ -93,6 +93,7 @@ import com.remodex.mobile.data.WorktreeFlowHandoffOutcome
 import com.remodex.mobile.data.gitWorkingDirectoryForGitActions
 import com.remodex.mobile.data.loadGitBranchesWithStatus
 import com.remodex.mobile.services.AiChangeSetRevertService
+import com.remodex.mobile.services.CodexService
 import com.remodex.mobile.services.GitActionsService
 import com.remodex.mobile.data.TurnAttachmentCodec
 import com.remodex.mobile.data.TurnFileAttachmentCodec
@@ -131,10 +132,32 @@ private const val STARTUP_TRACE_TAG = "RemodexStartup"
 private const val SMART_SCROLL_FADE_JUMP_DISTANCE_ITEMS = 24
 private const val BETA_LONG_THREAD_MESSAGE_THRESHOLD = 18
 private const val BETA_LONG_THREAD_SCROLL_DISTANCE_ITEMS = 6
+private const val DEFAULT_MANUAL_PET_ID = "custom:relay"
 private val TurnConversationMessageListTopPadding = 84.dp
 private val TurnConversationMessageListBottomPadding = 200.dp
 private val TurnConversationSmartScrollBottomPadding = 172.dp
 private val TurnConversationComposerBottomLift = 20.dp
+
+private data class PetSlashCommand(
+    val petId: String?,
+    val disable: Boolean,
+)
+
+private fun parsePetSlashCommand(text: String): PetSlashCommand? {
+    val parts = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (parts.firstOrNull()?.equals("/pet", ignoreCase = true) != true) return null
+    val argument = parts.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() }
+    if (argument?.equals("off", ignoreCase = true) == true ||
+        argument?.equals("hide", ignoreCase = true) == true ||
+        argument?.equals("disable", ignoreCase = true) == true
+    ) {
+        return PetSlashCommand(petId = null, disable = true)
+    }
+    return PetSlashCommand(petId = argument?.let(::normalizeManualPetId), disable = false)
+}
+
+private fun normalizeManualPetId(value: String): String =
+    if (value.contains(":")) value else "custom:$value"
 
 private data class PendingSteerDraft(
     val id: String = UUID.randomUUID().toString(),
@@ -183,12 +206,14 @@ fun TurnConversationPane(
     val protectedRunningFallback by repository.protectedRunningFallbackThreadIds.collectAsStateWithLifecycle()
     val queuedDraftDepthByThread by repository.turnDraftQueueDepthByThread.collectAsStateWithLifecycle()
     val queuedDraftPreviewByThread by repository.turnDraftQueuePreviewByThread.collectAsStateWithLifecycle()
+    val currentTrustedMacDeviceId by repository.currentTrustedMacDeviceId.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val aiChangeSetPersistence = LocalAIChangeSetPersistence.current
     var sending by remember(threadId) { mutableStateOf(false) }
     var lastError by remember(threadId) { mutableStateOf<String?>(null) }
-    var draft by rememberSaveable(threadId) { mutableStateOf("") }
+    var draft by remember(threadId, currentTrustedMacDeviceId) { mutableStateOf("") }
+    var loadedDraftKey by remember(threadId, currentTrustedMacDeviceId) { mutableStateOf<String?>(null) }
     var pendingPlanModeEnabled by remember(threadId) { mutableStateOf<Boolean?>(null) }
     var hiddenPlanAccessoryMessageIds by rememberSaveable(threadId) { mutableStateOf<List<String>>(emptyList()) }
     var closedPlanAccessoryMessageIds by rememberSaveable(threadId) { mutableStateOf<List<String>>(emptyList()) }
@@ -217,8 +242,14 @@ fun TurnConversationPane(
     val voiceRecorder = remember(threadId) { BridgeVoiceRecorder() }
     val lookupService = remember(repository) { CodexLookupService(repository) }
     var transcribeJob by remember(threadId) { mutableStateOf<Job?>(null) }
-    var threadChangeSets by remember(threadId) {
-        mutableStateOf(TurnUsageSheetLogic.recentChangeSetsForThread(threadId, aiChangeSetPersistence.load(), limit = 50))
+    var threadChangeSets by remember(threadId, currentTrustedMacDeviceId) {
+        mutableStateOf(
+            TurnUsageSheetLogic.recentChangeSetsForThread(
+                threadId,
+                aiChangeSetPersistence.load(currentTrustedMacDeviceId),
+                limit = 50,
+            ),
+        )
     }
     var applyingUndoChangeSetIds by remember(threadId) { mutableStateOf(emptySet<String>()) }
     var inlineUndoError by remember(threadId) { mutableStateOf<String?>(null) }
@@ -239,7 +270,6 @@ fun TurnConversationPane(
         remember(threadId, threads) {
             threads.firstOrNull { it.id == threadId }
         }
-    val conversationBackground = MaterialTheme.colorScheme.background
     val persistedPlanModeEnabled = activeThread?.collaborationMode == CodexCollaborationModeKind.plan
     val isPlanModeEnabled = pendingPlanModeEnabled ?: persistedPlanModeEnabled
     fun setPlanModeEnabled(enabled: Boolean) {
@@ -702,16 +732,26 @@ fun TurnConversationPane(
             }.getOrDefault(emptyList())
     }
 
-    LaunchedEffect(threadId) {
+    LaunchedEffect(threadId, currentTrustedMacDeviceId) {
+        val draftKey = "${currentTrustedMacDeviceId.orEmpty()}|$threadId"
+        loadedDraftKey = null
         transcribeJob?.cancel()
         transcribeJob = null
         voiceRecorder.cancel()
         voicePhase = TurnVoicePhase.Idle
         resetVoiceMeteringState()
         lastError = null
-        draft = ""
+        draft = runCatching { repository.loadComposerDraft(threadId) }.getOrDefault("")
+        loadedDraftKey = draftKey
         composerAttachments = emptyList()
         mentionChips = emptyList()
+    }
+
+    LaunchedEffect(threadId, currentTrustedMacDeviceId, draft, loadedDraftKey) {
+        val draftKey = "${currentTrustedMacDeviceId.orEmpty()}|$threadId"
+        if (loadedDraftKey == draftKey) {
+            runCatching { repository.saveComposerDraft(threadId, draft) }
+        }
     }
 
     LaunchedEffect(threadId, voicePhase) {
@@ -757,9 +797,13 @@ fun TurnConversationPane(
         remember(threadId, messagesByThread) {
             messagesByThread[threadId].orEmpty()
         }
-    LaunchedEffect(threadId, messages.size) {
+    LaunchedEffect(threadId, messages.size, currentTrustedMacDeviceId) {
         threadChangeSets =
-            TurnUsageSheetLogic.recentChangeSetsForThread(threadId, aiChangeSetPersistence.load(), limit = 50)
+            TurnUsageSheetLogic.recentChangeSetsForThread(
+                threadId,
+                aiChangeSetPersistence.load(currentTrustedMacDeviceId),
+                limit = 50,
+            )
     }
     val assistantUndoChangeSetsByMessageId =
         remember(messages, threadChangeSets) {
@@ -1397,7 +1441,6 @@ fun TurnConversationPane(
         modifier =
             modifier
                 .fillMaxSize()
-                .background(conversationBackground)
     ) {
         Box(
             modifier =
@@ -1410,61 +1453,62 @@ fun TurnConversationPane(
                     Modifier
                         .fillMaxSize(),
             ) {
-                MessageList(
-                    messages = visibleMessages,
-                    listState = listState,
-                    commandExecutionDetailsByItemId = commandExecutionDetailsByItemId,
-                    onOpenFullMessage = { fullTimelineMessage = it },
-                    onOpenPlanDetails = {
-                        planDetailsMessage = it
-                        showPlanDetailsSheet = true
-                        lastError = null
-                        scope.launch {
-                            AppContainer.betaEngagementRepository.recordMissionEvent(
-                                eventType = "plan_rendering_checked",
-                                screen = "conversation",
-                                refreshAfter = false,
-                            )
-                        }
-                    },
-                    onApplyPlan = {
-                        applyPlanToComposer()
-                    },
-                    canApplyPlan = !isThreadRunning && !sending,
-                    isAssistantTurnActive = isThreadRunning,
-                    activeTurnId = activeTurnId,
-                    hiddenEarlierCount = hiddenEarlierCount,
-                    canLoadOlderRemoteHistory = canLoadOlderRemoteHistory,
-                    isLoadingOlderHistory = isLoadingOlderHistory,
-                    olderHistoryError = olderHistoryError,
-                    contentPadding =
-                        PaddingValues(
-                            top = TurnConversationMessageListTopPadding,
-                            bottom = TurnConversationMessageListBottomPadding,
-                            start = 2.dp,
-                            end = 2.dp,
-                        ),
-                    onLoadEarlierMessages =
-                        if (hiddenEarlierCount > 0 || canLoadOlderRemoteHistory) {
-                            {
-                                if (canLoadOlderRemoteHistory && hiddenEarlierCount <= TIMELINE_LOAD_EARLIER_PAGE) {
-                                    scope.launch { runCatching { repository.loadOlderThreadHistory(threadId) } }
-                                } else {
-                                    visibleTailCount =
-                                        (visibleTailCount + TIMELINE_LOAD_EARLIER_PAGE)
-                                            .coerceAtMost(messages.size)
-                                    if (BuildConfig.DEBUG) {
-                                        Log.d(
-                                            STARTUP_TRACE_TAG,
-                                            "timeline loadEarlier thread=$threadId visibleTail=$visibleTailCount total=${messages.size}",
-                                        )
+                CompositionLocalProvider(LocalThreadGitProjectRoot provides activeThread?.gitWorkingDirectory) {
+                    MessageList(
+                        messages = visibleMessages,
+                        listState = listState,
+                        commandExecutionDetailsByItemId = commandExecutionDetailsByItemId,
+                        onOpenFullMessage = { fullTimelineMessage = it },
+                        onOpenPlanDetails = {
+                            planDetailsMessage = it
+                            showPlanDetailsSheet = true
+                            lastError = null
+                            scope.launch {
+                                AppContainer.betaEngagementRepository.recordMissionEvent(
+                                    eventType = "plan_rendering_checked",
+                                    screen = "conversation",
+                                    refreshAfter = false,
+                                )
+                            }
+                        },
+                        onApplyPlan = {
+                            applyPlanToComposer()
+                        },
+                        canApplyPlan = !isThreadRunning && !sending,
+                        isAssistantTurnActive = isThreadRunning,
+                        activeTurnId = activeTurnId,
+                        hiddenEarlierCount = hiddenEarlierCount,
+                        canLoadOlderRemoteHistory = canLoadOlderRemoteHistory,
+                        isLoadingOlderHistory = isLoadingOlderHistory,
+                        olderHistoryError = olderHistoryError,
+                        contentPadding =
+                            PaddingValues(
+                                top = TurnConversationMessageListTopPadding,
+                                bottom = TurnConversationMessageListBottomPadding,
+                                start = 2.dp,
+                                end = 2.dp,
+                            ),
+                        onLoadEarlierMessages =
+                            if (hiddenEarlierCount > 0 || canLoadOlderRemoteHistory) {
+                                {
+                                    if (canLoadOlderRemoteHistory && hiddenEarlierCount <= TIMELINE_LOAD_EARLIER_PAGE) {
+                                        scope.launch { runCatching { repository.loadOlderThreadHistory(threadId) } }
+                                    } else {
+                                        visibleTailCount =
+                                            (visibleTailCount + TIMELINE_LOAD_EARLIER_PAGE)
+                                                .coerceAtMost(messages.size)
+                                        if (BuildConfig.DEBUG) {
+                                            Log.d(
+                                                STARTUP_TRACE_TAG,
+                                                "timeline loadEarlier thread=$threadId visibleTail=$visibleTailCount total=${messages.size}",
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                        } else {
-                            null
-                        },
-                    assistantUndoChangeSetsByMessageId = assistantUndoChangeSetsByMessageId,
+                            } else {
+                                null
+                            },
+                        assistantUndoChangeSetsByMessageId = assistantUndoChangeSetsByMessageId,
                     applyingUndoChangeSetIds = applyingUndoChangeSetIds,
                     onUndoAssistantChanges = { changeSet ->
                         val workingDirectory = changeSet.repoRoot ?: activeThread?.cwd
@@ -1484,10 +1528,11 @@ fun TurnConversationPane(
                                 if (applyResult.success) {
                                     aiChangeSetPersistence.save(
                                         TurnUsageSheetLogic.markChangeSetReverted(
-                                            changeSets = aiChangeSetPersistence.load(),
+                                            changeSets = aiChangeSetPersistence.load(currentTrustedMacDeviceId),
                                             changeSetId = changeSet.id,
                                             now = Instant.now(),
                                         ),
+                                        currentTrustedMacDeviceId,
                                     )
                                 } else {
                                     val message =
@@ -1497,11 +1542,12 @@ fun TurnConversationPane(
                                     inlineUndoError = message
                                     aiChangeSetPersistence.save(
                                         TurnUsageSheetLogic.recordChangeSetRevertError(
-                                            changeSets = aiChangeSetPersistence.load(),
+                                            changeSets = aiChangeSetPersistence.load(currentTrustedMacDeviceId),
                                             changeSetId = changeSet.id,
                                             message = message,
                                             now = Instant.now(),
                                         ),
+                                        currentTrustedMacDeviceId,
                                     )
                                 }
                             }.onFailure { error ->
@@ -1511,17 +1557,18 @@ fun TurnConversationPane(
                                 inlineUndoError = message
                                 aiChangeSetPersistence.save(
                                     TurnUsageSheetLogic.recordChangeSetRevertError(
-                                        changeSets = aiChangeSetPersistence.load(),
+                                        changeSets = aiChangeSetPersistence.load(currentTrustedMacDeviceId),
                                         changeSetId = changeSet.id,
                                         message = message,
                                         now = Instant.now(),
                                     ),
+                                    currentTrustedMacDeviceId,
                                 )
                             }
                             threadChangeSets =
                                 TurnUsageSheetLogic.recentChangeSetsForThread(
                                     threadId,
-                                    aiChangeSetPersistence.load(),
+                                    aiChangeSetPersistence.load(currentTrustedMacDeviceId),
                                     limit = 50,
                                 )
                             applyingUndoChangeSetIds = applyingUndoChangeSetIds - changeSet.id
@@ -1541,7 +1588,8 @@ fun TurnConversationPane(
                             .fillMaxSize()
                             .blur(timelineBlurRadius)
                             .alpha(timelineContentAlpha),
-                )
+                    )
+                }
                 SmartScrollNavigationCta(
                     state = smartScrollNavigationState,
                     onNavigate = { requestedIndex ->
@@ -2032,12 +2080,7 @@ fun TurnConversationPane(
                                         throw e
                                     } catch (e: Exception) {
                                         if (isActive) {
-                                            lastError =
-                                                when (e) {
-                                                    is CodexServiceError ->
-                                                        e.message ?: voiceTranscriptionFailedMessage
-                                                    else -> e.message ?: voiceTranscriptionFailedMessage
-                                                }
+                                            lastError = formatVoiceTranscriptionError(e, voiceTranscriptionFailedMessage)
                                         }
                                     } finally {
                                         transcribeJob = null
@@ -2113,6 +2156,38 @@ fun TurnConversationPane(
                 voicePhase = TurnVoicePhase.Idle
                 resetVoiceMeteringState()
                 lastError = null
+                val petSlashCommand = parsePetSlashCommand(draft)
+                if (petSlashCommand != null) {
+                    val petStore = AppContainer.petCompanionStore
+                    if (petSlashCommand.disable) {
+                        petStore.setEnabled(false)
+                    } else {
+                        val targetPetId =
+                            petSlashCommand.petId
+                                ?: petStore.selectedPetId.value
+                                ?: petStore.availablePets.value.firstOrNull()?.id
+                                ?: DEFAULT_MANUAL_PET_ID
+                        petStore.selectPet(targetPetId)
+                        petStore.restoreCachedPet(targetPetId)
+                        petStore.setEnabled(true)
+                        if (ready && connectionState is ConnectionState.Connected) {
+                            (repository as? CodexService)?.let { codexService ->
+                                scope.launch {
+                                    runCatching {
+                                        petStore.loadPetsIfNeeded(codexService)
+                                        petStore.loadSelectedPet(codexService)
+                                    }.onFailure { error ->
+                                        petStore.setErrorMessage("Could not load pet: ${error.message ?: "unknown error"}")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    petStore.setErrorMessage(null)
+                    draft = ""
+                    mentionChips = emptyList()
+                    return@TurnComposerBar
+                }
                 if (isThreadRunning) {
                     stageCurrentDraftForSteering()
                     return@TurnComposerBar

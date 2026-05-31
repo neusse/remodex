@@ -97,6 +97,7 @@ private fun ThreadUsageStatusSheetContent(
     val queuedDepthByThread by repository.turnDraftQueueDepthByThread.collectAsStateWithLifecycle()
     val queuedPreviewByThread by repository.turnDraftQueuePreviewByThread.collectAsStateWithLifecycle()
     val threads by repository.threads.collectAsStateWithLifecycle()
+    val currentTrustedMacDeviceId by repository.currentTrustedMacDeviceId.collectAsStateWithLifecycle()
     val aiChangeSetPersistence = LocalAIChangeSetPersistence.current
 
     val displayRows = remember(buckets) { CodexRateLimitBucket.visibleDisplayRows(buckets) }
@@ -118,8 +119,13 @@ private fun ThreadUsageStatusSheetContent(
         remember(threadId, queuedPreviewByThread) {
             queuedPreviewByThread[threadId].orEmpty()
         }
-    var recentChangeSets by remember(threadId) {
-        mutableStateOf(TurnUsageSheetLogic.recentChangeSetsForThread(threadId, aiChangeSetPersistence.load()))
+    var recentChangeSets by remember(threadId, currentTrustedMacDeviceId) {
+        mutableStateOf(
+            TurnUsageSheetLogic.recentChangeSetsForThread(
+                threadId,
+                aiChangeSetPersistence.load(currentTrustedMacDeviceId),
+            ),
+        )
     }
     val threadCwd =
         remember(threadId, threads) {
@@ -130,8 +136,12 @@ private fun ThreadUsageStatusSheetContent(
     val doneCd = stringResource(R.string.cd_turn_usage_sheet_close)
     val combinedLoadingCd = stringResource(R.string.cd_usage_combined_usage_loading)
 
-    LaunchedEffect(threadId) {
-        recentChangeSets = TurnUsageSheetLogic.recentChangeSetsForThread(threadId, aiChangeSetPersistence.load())
+    LaunchedEffect(threadId, currentTrustedMacDeviceId) {
+        recentChangeSets =
+            TurnUsageSheetLogic.recentChangeSetsForThread(
+                threadId,
+                aiChangeSetPersistence.load(currentTrustedMacDeviceId),
+            )
         runCatching { repository.refreshUsageStatus(threadId) }
     }
 
@@ -197,27 +207,33 @@ private fun ThreadUsageStatusSheetContent(
                 repository = repository,
                 threadCwd = threadCwd,
                 onChangeSetsUpdated = {
-                    recentChangeSets = TurnUsageSheetLogic.recentChangeSetsForThread(threadId, aiChangeSetPersistence.load())
+                    recentChangeSets =
+                        TurnUsageSheetLogic.recentChangeSetsForThread(
+                            threadId,
+                            aiChangeSetPersistence.load(currentTrustedMacDeviceId),
+                        )
                 },
                 markChangeSetReverted = { changeSetId ->
                     val now = Instant.now()
                     aiChangeSetPersistence.save(
                         TurnUsageSheetLogic.markChangeSetReverted(
-                            changeSets = aiChangeSetPersistence.load(),
+                            changeSets = aiChangeSetPersistence.load(currentTrustedMacDeviceId),
                             changeSetId = changeSetId,
                             now = now,
                         ),
+                        currentTrustedMacDeviceId,
                     )
                 },
                 recordChangeSetRevertError = { changeSetId, errorMessage ->
                     val now = Instant.now()
                     aiChangeSetPersistence.save(
                         TurnUsageSheetLogic.recordChangeSetRevertError(
-                            changeSets = aiChangeSetPersistence.load(),
+                            changeSets = aiChangeSetPersistence.load(currentTrustedMacDeviceId),
                             changeSetId = changeSetId,
                             message = errorMessage,
                             now = now,
                         ),
+                        currentTrustedMacDeviceId,
                     )
                 },
             )
