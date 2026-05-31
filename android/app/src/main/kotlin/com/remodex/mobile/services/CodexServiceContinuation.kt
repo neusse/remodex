@@ -21,6 +21,6 @@ internal suspend fun CodexService.createContinuationThreadInternal(
         turnId = null,
         text = line,
     )
-    sessionPersistence.saveLastActiveThreadId(thread.id)
+    persistActiveThreadId(thread.id)
     return thread
 }

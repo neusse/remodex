@@ -153,7 +153,7 @@ class MessageTimelineStoreTest {
         }
 
     @Test
-    fun appendAssistantDelta_continuesOnlyStreamingAssistantWhenLiveItemIdChanges() =
+    fun appendAssistantDelta_finishesPreviousAssistantWhenLiveItemIdChanges() =
         runTest {
             val store = MessageTimelineStore()
 
@@ -173,14 +173,42 @@ class MessageTimelineStoreTest {
                 threadId = "thread-1",
                 turnId = "turn-1",
                 itemId = "assistant-real",
-                text = "live text final",
+                text = "text final",
             )
 
             val messages = store.messagesByThread.value["thread-1"].orEmpty()
+            assertEquals(2, messages.size)
+            assertEquals("live", messages[0].text)
+            assertEquals("assistant-temp", messages[0].itemId)
+            assertEquals(false, messages[0].isStreaming)
+            assertEquals("text final", messages[1].text)
+            assertEquals("turn-1", messages[1].turnId)
+            assertEquals("assistant-real", messages[1].itemId)
+            assertEquals(false, messages[1].isStreaming)
+        }
+
+    @Test
+    fun finishStreamingMessages_marksTextRowsReadyAndRemovesEmptyAssistantPlaceholder() =
+        runTest {
+            val store = MessageTimelineStore()
+
+            store.ensureStreamingAssistantPlaceholder(
+                threadId = "thread-1",
+                turnId = "turn-empty",
+            )
+            store.appendAssistantDelta(
+                threadId = "thread-1",
+                turnId = "turn-1",
+                itemId = "assistant-1",
+                delta = "partial",
+            )
+
+            store.finishStreamingMessages(threadId = "thread-1", turnId = "turn-empty")
+            store.finishStreamingMessages(threadId = "thread-1", turnId = "turn-1")
+
+            val messages = store.messagesByThread.value["thread-1"].orEmpty()
             assertEquals(1, messages.size)
-            assertEquals("live text final", messages.single().text)
-            assertEquals("turn-1", messages.single().turnId)
-            assertEquals("assistant-real", messages.single().itemId)
+            assertEquals("partial", messages.single().text)
             assertEquals(false, messages.single().isStreaming)
         }
 

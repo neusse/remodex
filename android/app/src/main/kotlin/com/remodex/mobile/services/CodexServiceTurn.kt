@@ -173,7 +173,7 @@ internal suspend fun CodexService.startTurnInternal(
 
     try {
         _activeThreadId.value = targetThreadId
-        sessionPersistence.saveLastActiveThreadId(targetThreadId)
+        persistActiveThreadId(targetThreadId)
         noteProtectedRunningFallback(targetThreadId, true)
         val response = sendTurnStartWithImageFallback(targetThreadId)
         markTurnStartAccepted(targetThreadId, pendingId, response)
@@ -187,7 +187,7 @@ internal suspend fun CodexService.startTurnInternal(
             val retryPendingId = messageTimelineStore.appendPendingUserMessage(newId, trimmed, readyAttachments)
             try {
                 _activeThreadId.value = newId
-                sessionPersistence.saveLastActiveThreadId(newId)
+                persistActiveThreadId(newId)
                 noteProtectedRunningFallback(newId, true)
                 val response = sendTurnStartWithImageFallback(newId)
                 markTurnStartAccepted(newId, retryPendingId, response)
@@ -598,11 +598,13 @@ internal suspend fun CodexService.interruptTurnInternal(
     val resolvedTurnId = turnId
     try {
         sendInterruptRpc(resolvedTurnId, tid, snakeCase = false)
+        noteTurnFinished(tid)
         return
     } catch (e: CodexServiceError.RpcFailure) {
         if (shouldRetryInterruptSnakeCase(e)) {
             try {
                 sendInterruptRpc(resolvedTurnId, tid, snakeCase = true)
+                noteTurnFinished(tid)
                 return
             } catch (e2: CodexServiceError.RpcFailure) {
                 if (shouldRetryInterruptRefreshTurn(e2)) {
@@ -638,6 +640,7 @@ private suspend fun CodexService.tryRefreshAndInterrupt(
         }
     }
     noteTurnStarted(threadId, refreshed)
+    noteTurnFinished(threadId)
 }
 
 private suspend fun CodexService.resolveInFlightTurnSnapshotForInterrupt(threadId: String): ThreadTurnInterruptSnapshot {

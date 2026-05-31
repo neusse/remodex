@@ -21,6 +21,7 @@ import com.remodex.mobile.core.model.RPCError
 import com.remodex.mobile.core.model.RPCMessage
 import com.remodex.mobile.core.transport.ConnectionState
 import com.remodex.mobile.data.CodexRepository
+import com.remodex.mobile.services.EmptyTrustedDeviceCodexRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -405,7 +406,7 @@ class GitActionsServiceTest {
 
 private class GitActionsFakeRepository(
     private val onSend: suspend (String, JSONValue?) -> RPCMessage,
-) : CodexRepository {
+) : CodexRepository, EmptyTrustedDeviceCodexRepository {
     override val isSessionReady: StateFlow<Boolean> = MutableStateFlow(true)
     override val connectionState: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.Connected)
     override val threads: StateFlow<List<CodexThread>> = MutableStateFlow(emptyList())

@@ -95,13 +95,18 @@ private suspend fun CodexService.setThreadArchivedLocally(
     hydratedThreadIds.remove(threadId)
     loadingHistory.remove(threadId)
     messageTimelineStore.removeThreadMessages(threadId)
+    persistedThreadRenameById.remove(threadId)
     sessionPersistence.removeThreadRename(threadId)
     associatedManagedWorktreePathByThreadId.remove(threadId)
     sessionPersistence.removeAssociatedManagedWorktreePath(threadId)
+    resolvedMacScopedPersistenceDeviceId()?.let { device ->
+        macScopedSessionStore.saveThreadRenames(device, persistedThreadRenameById.toMap())
+        macScopedSessionStore.saveAssociatedManagedWorktreePaths(device, associatedManagedWorktreePathByThreadId.toMap())
+    }
     if (isArchived) {
-        sessionPersistence.addLocallyArchivedThreadId(threadId)
+        setScopedLocallyArchivedThreadId(threadId, isArchived = true)
     } else {
-        sessionPersistence.removeLocallyArchivedThreadId(threadId)
+        setScopedLocallyArchivedThreadId(threadId, isArchived = false)
     }
 
     val currentThreads = _threads.value.toMutableList()
@@ -114,7 +119,7 @@ private suspend fun CodexService.setThreadArchivedLocally(
 
     if (_activeThreadId.value == threadId) {
         _activeThreadId.value = null
-        sessionPersistence.saveLastActiveThreadId(null)
+        persistActiveThreadId(null)
     }
 
     publishThreads(currentThreads)

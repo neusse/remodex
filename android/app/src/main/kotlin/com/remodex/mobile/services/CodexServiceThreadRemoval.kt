@@ -20,14 +20,19 @@ internal suspend fun CodexService.deleteThreadLocallyInternal(threadId: String) 
     _protectedRunningFallbackThreadIds.value = _protectedRunningFallbackThreadIds.value - tid
     _runningTurnIdByThread.value = _runningTurnIdByThread.value - tid
     messageTimelineStore.removeThreadMessages(tid)
+    persistedThreadRenameById.remove(tid)
     sessionPersistence.removeThreadRename(tid)
     associatedManagedWorktreePathByThreadId.remove(tid)
     sessionPersistence.removeAssociatedManagedWorktreePath(tid)
-    sessionPersistence.addLocallyDeletedThreadId(tid)
+    resolvedMacScopedPersistenceDeviceId()?.let { device ->
+        macScopedSessionStore.saveThreadRenames(device, persistedThreadRenameById.toMap())
+        macScopedSessionStore.saveAssociatedManagedWorktreePaths(device, associatedManagedWorktreePathByThreadId.toMap())
+    }
+    addScopedLocallyDeletedThreadId(tid)
 
     if (_activeThreadId.value == tid) {
         _activeThreadId.value = null
-        sessionPersistence.saveLastActiveThreadId(null)
+        persistActiveThreadId(null)
     }
     publishThreads(_threads.value.filter { it.id != tid })
 }

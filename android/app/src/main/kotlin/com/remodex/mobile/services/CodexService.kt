@@ -10,12 +10,14 @@ import com.remodex.mobile.core.model.CodexMessage
 import com.remodex.mobile.core.model.CodexImageAttachment
 import com.remodex.mobile.core.model.CodexModelOption
 import com.remodex.mobile.core.model.CodexRateLimitBucket
+import com.remodex.mobile.core.model.CodexPairingQRPayload
 import com.remodex.mobile.core.model.CodexReviewTarget
 import com.remodex.mobile.core.model.CodexSecureSession
 import com.remodex.mobile.core.model.CodexServiceTier
 import com.remodex.mobile.core.model.CodexTurnMention
 import com.remodex.mobile.core.model.CodexTurnSkillMention
 import com.remodex.mobile.core.model.CodexThread
+import com.remodex.mobile.core.model.CodexTrustedMacRecord
 import com.remodex.mobile.core.model.GitStackedActionProgressEvent
 import com.remodex.mobile.core.model.JSONValue
 import com.remodex.mobile.core.model.PendingApprovalDecision
@@ -24,6 +26,7 @@ import com.remodex.mobile.core.model.PendingStructuredInputRequest
 import com.remodex.mobile.core.model.RPCMessage
 import com.remodex.mobile.core.model.ThreadHistoryPaginationState
 import com.remodex.mobile.core.persistence.CodexMessagePersistence
+import com.remodex.mobile.core.persistence.MacScopedSessionStore
 import com.remodex.mobile.core.persistence.SessionPersistence
 import com.remodex.mobile.core.protocol.JsonRpcCodec
 import com.remodex.mobile.core.security.SecureStore
@@ -53,12 +56,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.WebSocket
 
-private const val INITIAL_TIMELINE_TAIL_LIMIT = 48
+internal const val INITIAL_TIMELINE_TAIL_LIMIT = 48
 
 /**
  * Android counterpart of [CodexService.swift](../../../../../../../../CodexMobile/CodexMobile/Services/CodexService.swift).
@@ -80,7 +84,7 @@ class CodexService(
     internal val httpCallClient: OkHttpClient = httpClient,
     internal val secureStore: SecureStore,
     internal val sessionPersistence: SessionPersistence,
-    messagePersistence: CodexMessagePersistence,
+    internal val messagePersistence: CodexMessagePersistence,
 ) : CodexRepository {
     internal val appContext = context.applicationContext
 
@@ -109,7 +113,7 @@ class CodexService(
     @Volatile
     internal var sessionReady = false
 
-    /** Cleared when the bridge reports unsupported `voice/resolveAuth` (parity iOS). */
+    /** Cleared when the bridge reports unsupported `voice/transcribe`; legacy auth fallback remains available. */
     @Volatile
     internal var supportsBridgeVoiceAuth: Boolean = true
 
@@ -241,6 +245,33 @@ class CodexService(
     @Volatile
     internal var hasPresentedThreadForkBridgeUpdatePrompt: Boolean = false
 
+    internal val macScopedSessionStore = MacScopedSessionStore(sessionPersistence, appContext)
+
+    internal val _trustedDevices = MutableStateFlow<List<CodexTrustedMacRecord>>(emptyList())
+    override val trustedDevices: StateFlow<List<CodexTrustedMacRecord>> = _trustedDevices.asStateFlow()
+
+    internal val _switchingDeviceId = MutableStateFlow<String?>(null)
+    override val switchingDeviceId: StateFlow<String?> = _switchingDeviceId.asStateFlow()
+
+    internal val _deviceSwitchNotice = MutableStateFlow<String?>(null)
+    override val deviceSwitchNotice: StateFlow<String?> = _deviceSwitchNotice.asStateFlow()
+
+    internal val _currentTrustedMacDeviceId = MutableStateFlow<String?>(null)
+    override val currentTrustedMacDeviceId: StateFlow<String?> = _currentTrustedMacDeviceId.asStateFlow()
+
+    internal val _previousTrustedMacDeviceId = MutableStateFlow<String?>(null)
+    override val previousTrustedMacDeviceId: StateFlow<String?> = _previousTrustedMacDeviceId.asStateFlow()
+
+    internal val _relayMacDeviceId = MutableStateFlow<String?>(null)
+    override val relayMacDeviceId: StateFlow<String?> = _relayMacDeviceId.asStateFlow()
+
+    internal var trustedSessionResolveClientLazy: CodexTrustedSessionResolveClient? = null
+    internal val deviceSwitchMutex = Mutex()
+    internal var isCancellingDeviceSwitch = false
+    internal var macScopedContextOverrideDeviceId: String? = null
+    internal var suspendAutomaticMacScopedPersistence = false
+    internal var isApplyingMacScopedState = false
+
     internal val turnDraftQueueStore = TurnDraftQueueStore()
 
     internal val pendingApprovalResponders =
@@ -250,17 +281,15 @@ class CodexService(
 
     internal val messageTimelineStore =
         MessageTimelineStore(
-            persistence = messagePersistence,
-            lastActiveThreadId = sessionPersistence.loadLastActiveThreadId(),
-            initialTailLimit = INITIAL_TIMELINE_TAIL_LIMIT,
+            initialMessages =
+                loadMacScopedInitialMessages(
+                    macDeviceId = normalizedCurrentTrustedMacDeviceId(),
+                ),
+            saveMessages = { messages ->
+                messagePersistence.save(messages, resolvedMacScopedPersistenceDeviceId())
+            },
         )
     internal val commandExecutionDetailsStore = CommandExecutionDetailsStore()
-
-    init {
-        scope.launch {
-            runCatching { messagePersistence.migrateLegacyMonolithToPerThreadIfNeeded() }
-        }
-    }
 
     /** Local-only background alerts (turn completion, approvals, structured input). */
     internal val localNotificationPresenter = RemodexLocalNotificationPresenter(appContext)
@@ -307,6 +336,17 @@ class CodexService(
         ConcurrentHashMap<String, String>().also {
             it.putAll(sessionPersistence.loadAssociatedManagedWorktreePaths())
         }
+
+    init {
+        initializeTrustedDeviceState()
+        normalizedCurrentTrustedMacDeviceId()?.let { deviceId ->
+            loadMacScopedLocalState(deviceId)
+            loadMacScopedDefaultsState(deviceId)
+        }
+        scope.launch {
+            runCatching { messagePersistence.migrateLegacyMonolithToPerThreadIfNeeded() }
+        }
+    }
 
     /**
      * When set, [sendRequestImpl] (not handshake) uses this instead of the wire. Used for JVM tests.
@@ -410,9 +450,13 @@ class CodexService(
     internal fun noteTurnFinished(threadId: String) {
         val th = threadId.trim()
         if (th.isEmpty()) return
+        val turnId = _runningTurnIdByThread.value[th]
         synchronized(runningTurnStateLock) {
             _runningTurnIdByThread.value = _runningTurnIdByThread.value.filterKeys { it != th }
             _protectedRunningFallbackThreadIds.value = _protectedRunningFallbackThreadIds.value - th
+        }
+        scope.launch {
+            messageTimelineStore.finishStreamingMessages(th, turnId)
         }
     }
 
@@ -513,6 +557,31 @@ class CodexService(
         wavBytes: ByteArray,
         durationSeconds: Double,
     ): String = transcribeBridgeVoiceWavImpl(wavBytes, durationSeconds)
+
+    override suspend fun loadComposerDraft(threadId: String): String =
+        withContext(Dispatchers.IO) {
+            val tid = threadId.trim().takeIf { it.isNotEmpty() } ?: return@withContext ""
+            macScopedSessionStore.loadComposerDrafts(resolvedMacScopedPersistenceDeviceId())[tid].orEmpty()
+        }
+
+    override suspend fun saveComposerDraft(
+        threadId: String,
+        draft: String,
+    ) = withContext(Dispatchers.IO) {
+        macScopedSessionStore.saveComposerDraft(
+            macDeviceId = resolvedMacScopedPersistenceDeviceId(),
+            threadId = threadId,
+            draft = draft,
+        )
+    }
+
+    override suspend fun clearComposerDraft(threadId: String) =
+        withContext(Dispatchers.IO) {
+            macScopedSessionStore.clearComposerDraft(
+                macDeviceId = resolvedMacScopedPersistenceDeviceId(),
+                threadId = threadId,
+            )
+        }
 
     override suspend fun startThread(
         model: String?,
@@ -621,4 +690,22 @@ class CodexService(
 
     override fun associatedManagedWorktreePathFor(threadId: String) =
         associatedManagedWorktreePathForImpl(threadId)
+
+    override suspend fun switchToTrustedDevice(deviceId: String) = switchToTrustedDeviceImpl(deviceId)
+
+    override suspend fun switchToScannedDevice(payload: CodexPairingQRPayload) = switchToScannedDeviceImpl(payload)
+
+    override suspend fun cancelDeviceSwitch() = cancelDeviceSwitchImpl()
+
+    override fun setDeviceMenuVisible(
+        deviceId: String,
+        visible: Boolean,
+    ) {
+        com.remodex.mobile.ui.mydevices.MyDeviceMenuVisibilityStore.setVisible(visible, deviceId)
+        refreshTrustedDevices()
+    }
+
+    override fun forgetTrustedDevice(deviceId: String) {
+        forgetTrustedDeviceImpl(deviceId)
+    }
 }

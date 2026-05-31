@@ -2267,6 +2267,7 @@ fn start_bridge(app_handle: tauri::AppHandle) -> Result<String, String> {
         .arg("run")
         .current_dir(&bridge_dir)
         .env("REMODEX_RELAY", &relay_url)
+        .env("REMODEX_REFRESH_ENABLED", "true")
         .env("REMODEX_PRINT_PAIRING_JSON", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

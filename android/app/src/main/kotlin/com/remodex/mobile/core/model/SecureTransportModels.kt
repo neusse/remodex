@@ -58,6 +58,7 @@ data class CodexPairingQRPayload(
     val macDeviceId: String,
     val macIdentityPublicKey: String,
     val expiresAt: Long,
+    val displayName: String? = null,
 )
 
 @Serializable
@@ -117,6 +118,7 @@ data class SecureServerHello(
     val expiresAtForTranscript: Long,
     val macSignature: String,
     val clientNonce: String? = null,
+    val displayName: String? = null,
 )
 
 @Serializable

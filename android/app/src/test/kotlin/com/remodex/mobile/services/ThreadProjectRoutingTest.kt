@@ -99,6 +99,18 @@ class ThreadProjectRoutingTest {
     }
 
     @Test
+    fun newThreadProjectPath_preservesExplicitCodexChatCwdForThreadStart() {
+        val chatRoot = "C:\\Users\\andre\\Documents\\Codex\\2026-05-29\\hello"
+        val thread = CodexThread(id = "thread-1", title = "New Thread", cwd = null)
+
+        val patched = applyRequestedProjectPathForNewThread(thread, chatRoot)
+
+        assertEquals(chatRoot, patched.cwd)
+        assertEquals(null, patched.normalizedProjectPath)
+        assertEquals(chatRoot, patched.gitWorkingDirectory)
+    }
+
+    @Test
     fun newThreadProjectPath_ignoresInvalidRequestedPath() {
         val thread = CodexThread(id = "thread-1", title = "New Thread", cwd = "/tmp/server")
         val patched = applyRequestedProjectPathForNewThread(thread, "_default")

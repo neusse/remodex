@@ -14,9 +14,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Computer
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,8 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -85,11 +83,8 @@ fun RemodexCircleIconButton(
 fun SidebarBrandHeader(
     colors: SidebarColorPalette,
     onMoreMenu: SidebarMoreMenuCallbacks,
-    onOpenDesktop: () -> Unit,
     onOpenSettings: () -> Unit,
-    showTesterHq: Boolean,
-    onOpenTesterHq: () -> Unit,
-    onTesterHqButtonPositioned: (LayoutCoordinates) -> Unit,
+    onOpenMyDevices: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var moreExpanded by remember { mutableStateOf(false) }
@@ -130,15 +125,6 @@ fun SidebarBrandHeader(
                 color = colors.primaryText,
             )
         }
-        if (showTesterHq) {
-            SidebarHeaderIconButton(
-                icon = { Icon(Icons.Outlined.EmojiEvents, contentDescription = null, tint = colors.primaryText, modifier = Modifier.size(20.dp)) },
-                contentDescription = stringResource(R.string.nav_tester_hq),
-                colors = colors,
-                onClick = onOpenTesterHq,
-                modifier = Modifier.onGloballyPositioned(onTesterHqButtonPositioned),
-            )
-        }
         SidebarHeaderIconButton(
             icon = { Icon(Icons.Outlined.MoreHoriz, contentDescription = null, tint = colors.primaryText, modifier = Modifier.size(20.dp)) },
             contentDescription = stringResource(R.string.sidebar_more_menu_cd),
@@ -168,7 +154,7 @@ fun SidebarBrandHeader(
                     },
                     leadingIcon = {
                         Icon(
-                            painter = painterResource(LucideR.drawable.lucide_ic_cloud),
+                            imageVector = Icons.Outlined.ChatBubbleOutline,
                             contentDescription = null,
                         )
                     },
@@ -193,13 +179,33 @@ fun SidebarBrandHeader(
                         )
                     },
                 )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.my_devices_title)) },
+                    onClick = {
+                        moreExpanded = false
+                        onMoreMenu.onOpenConnections()
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Outlined.Devices,
+                            contentDescription = null,
+                        )
+                    },
+                )
             }
         }
         SidebarHeaderIconButton(
-            icon = { Icon(Icons.Outlined.Computer, contentDescription = null, tint = colors.primaryText, modifier = Modifier.size(20.dp)) },
-            contentDescription = stringResource(R.string.sidebar_desktop_cd),
+            icon = {
+                Icon(
+                    Icons.Outlined.Devices,
+                    contentDescription = null,
+                    tint = colors.primaryText,
+                    modifier = Modifier.size(20.dp),
+                )
+            },
+            contentDescription = stringResource(R.string.sidebar_connections_cd),
             colors = colors,
-            onClick = onOpenDesktop,
+            onClick = onOpenMyDevices,
         )
         SidebarHeaderIconButton(
             icon = { Icon(Icons.Outlined.Settings, contentDescription = null, tint = colors.primaryText, modifier = Modifier.size(20.dp)) },
@@ -215,6 +221,7 @@ data class SidebarMoreMenuCallbacks(
     val onQuickCloudChat: () -> Unit,
     val onOpenArchivedChats: () -> Unit,
     val onRefreshThreads: () -> Unit,
+    val onOpenConnections: () -> Unit,
 )
 
 @Composable

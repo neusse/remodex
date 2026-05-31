@@ -9,8 +9,8 @@ import com.remodex.mobile.data.ThreadListSync
  */
 internal suspend fun CodexService.refreshThreadsInternal() {
     if (!sessionReady) return
-    val locallyDeleted = sessionPersistence.loadLocallyDeletedThreadIds()
-    val locallyArchived = sessionPersistence.loadLocallyArchivedThreadIds()
+    val locallyDeleted = loadScopedLocallyDeletedThreadIds()
+    val locallyArchived = loadScopedLocallyArchivedThreadIds()
     val fetched =
         runCatching { ThreadListSync.fetchMerged(this) }.getOrElse { return }
             .filter { it.id !in locallyDeleted }
@@ -40,7 +40,13 @@ internal suspend fun CodexService.refreshThreadsInternal() {
 
 internal fun CodexService.publishThreads(threads: List<CodexThread>) {
     _threads.value = threads
-    sessionPersistence.saveCachedThreads(threads)
+    if (isApplyingMacScopedState) return
+    val device = resolvedMacScopedPersistenceDeviceId()
+    if (device != null) {
+        macScopedSessionStore.saveCachedThreads(device, threads)
+    } else {
+        sessionPersistence.saveCachedThreads(threads)
+    }
 }
 
 internal fun mergeFetchedThreadsPreservingLocalRows(

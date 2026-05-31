@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -26,6 +27,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -50,7 +52,19 @@ fun TermuxTerminalSurface(
     modifier: Modifier = Modifier,
 ) {
     val focusRequester = remember { FocusRequester() }
-    val terminalBridge = remember { TermuxTerminalBridge(onInput = onInput) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val requestInputFocus = {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+        Unit
+    }
+    val terminalBridge =
+        remember {
+            TermuxTerminalBridge(
+                onInput = onInput,
+                requestInputFocus = requestInputFocus,
+            )
+        }
     val density = LocalDensity.current
     val viewportBackground = rememberTerminalViewportBackground()
     val terminalTextSizePx = with(density) { TERMINAL_TEXT_SIZE_DP.dp.toPx().toInt() }
@@ -76,10 +90,10 @@ fun TermuxTerminalSurface(
     }
 
     Box(
-        modifier =
-            modifier
+            modifier =
+                modifier
                 .background(viewportBackground)
-                .clickable { focusRequester.requestFocus() }
+                .clickable { requestInputFocus() }
                 .onSizeChanged { size ->
                     val horizontalPaddingPx = with(density) { TERMINAL_CONTENT_PADDING.toPx() * 2 }
                     val verticalPaddingPx = with(density) { TERMINAL_CONTENT_PADDING.toPx() * 2 }
@@ -118,7 +132,7 @@ fun TermuxTerminalSurface(
             modifier =
                 Modifier
                     .focusRequester(focusRequester)
-                    .fillMaxSize()
+                    .size(1.dp)
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         when (event.key) {
@@ -146,11 +160,12 @@ private fun String.terminalInputBytes(): ByteArray =
 
 private class TermuxTerminalBridge(
     private val onInput: (ByteArray) -> Unit,
+    private val requestInputFocus: () -> Unit,
 ) {
     private var view: TerminalView? = null
     private val output = RemoteTerminalOutput(onInput)
     private val sessionClient = NoopTerminalSessionClient()
-    private val viewClient = NoopTerminalViewClient()
+    private val viewClient = NoopTerminalViewClient(requestInputFocus)
     private val emulator =
         TerminalEmulator(
             output,
@@ -247,9 +262,11 @@ private class NoopTerminalSessionClient : TerminalSessionClient {
     ) = Unit
 }
 
-private class NoopTerminalViewClient : TerminalViewClient {
+private class NoopTerminalViewClient(
+    private val requestInputFocus: () -> Unit,
+) : TerminalViewClient {
     override fun onScale(scale: Float): Float = scale.coerceIn(0.8f, 1.4f)
-    override fun onSingleTapUp(e: MotionEvent?) = Unit
+    override fun onSingleTapUp(e: MotionEvent?) = requestInputFocus()
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
     override fun shouldEnforceCharBasedInput(): Boolean = true
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = false

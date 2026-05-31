@@ -39,8 +39,8 @@ data class CodexThread(
         private val windowsDrivePathRegex = Regex("^[A-Za-z]:[\\\\/].*")
         private val adHocCodexCwdPatterns =
             listOf(
-                Regex("/Documents/Codex/\\d{4}-\\d{2}-\\d{2}/"),
-                Regex("/\\.codex/sessions/"),
+                Regex("(^|[\\\\/])Documents[\\\\/]Codex[\\\\/]\\d{4}-\\d{2}-\\d{2}[\\\\/]"),
+                Regex("(^|[\\\\/])\\.codex[\\\\/]sessions[\\\\/]"),
             )
 
         fun fromJsonObject(obj: JsonObject): CodexThread {
@@ -270,6 +270,18 @@ data class CodexThread(
             if (trimmed.isEmpty()) return null
             if (!isLikelyFilesystemPath(trimmed)) return null
             if (isAdHocCodexCwd(trimmed)) return null
+            return normalizeFilesystemPath(trimmed)
+        }
+
+        fun normalizeThreadStartCwd(value: String?): String? {
+            if (value == null) return null
+            val trimmed = value.trim()
+            if (trimmed.isEmpty()) return null
+            if (!isLikelyFilesystemPath(trimmed)) return null
+            return normalizeFilesystemPath(trimmed)
+        }
+
+        private fun normalizeFilesystemPath(trimmed: String): String? {
             if (trimmed == "/") return trimmed
             var normalized = trimmed.trimEnd('\\', '/')
             while ((normalized.endsWith("/") || normalized.endsWith("\\")) && normalized.length > 1) {
@@ -443,7 +455,7 @@ data class CodexThread(
 }
 
 fun projectDisplayLabelFor(normalizedProjectPath: String?): String {
-    if (normalizedProjectPath == null) return "Cloud"
+    if (normalizedProjectPath == null) return "Quick Chat"
     val base = projectBaseDisplayName(normalizedProjectPath)
     val token = codexManagedWorktreeDisplayToken(normalizedProjectPath) ?: return base
     return "$base $token"

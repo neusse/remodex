@@ -20,6 +20,8 @@ import com.remodex.mobile.core.notification.TurnCompletionNotificationLogic
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
@@ -30,6 +32,8 @@ private enum class ServerRequestKind {
     Approval,
     Unsupported,
 }
+
+private const val ASSISTANT_STREAM_SILENCE_FINALIZE_MS = 1_200L
 
 /**
  * Routes Mac→phone JSON-RPC notifications and server-initiated requests.
@@ -81,9 +85,12 @@ internal class IncomingEventRouter(
     private val onGitStackedActionProgress: (GitStackedActionProgressEvent) -> Unit = { _ -> },
 ) {
     private val threadIdByTurnId = ConcurrentHashMap<String, String>()
+    private val assistantSilenceFinalizeJobs = ConcurrentHashMap<String, Job>()
 
     fun resetCaches() {
         threadIdByTurnId.clear()
+        assistantSilenceFinalizeJobs.values.forEach { it.cancel() }
+        assistantSilenceFinalizeJobs.clear()
     }
 
     fun dispatchNotification(
@@ -105,6 +112,9 @@ internal class IncomingEventRouter(
             }
         }
         if (m == "codex/event" && tryConsumeCodexTokenCountEnvelope(obj)) {
+            return
+        }
+        if (m == "codex/event" && tryConsumeCodexAgentMessageEnvelope(obj)) {
             return
         }
         if (m == "codex/event" && tryConsumeCodexTurnLifecycleEnvelope(obj)) {
@@ -242,6 +252,34 @@ internal class IncomingEventRouter(
             }
             "exec_command_end" -> {
                 handleCommandExecutionState(eventType, p)
+                true
+            }
+            else -> false
+        }
+    }
+
+    private fun tryConsumeCodexAgentMessageEnvelope(params: Map<String, JSONValue>?): Boolean {
+        val p = params ?: return false
+        val msg = p["msg"]?.objectValue ?: p["event"]?.objectValue ?: return false
+        val eventType =
+            msg["type"]?.stringValue
+                ?.trim()
+                ?.lowercase()
+                ?.replace("-", "_")
+                ?: return false
+        return when (eventType) {
+            "agent_message_delta",
+            "agent_message_content_delta",
+            "assistant_message_delta",
+            "assistant_message_content_delta",
+            -> {
+                handleAgentDelta(p)
+                true
+            }
+            "agent_message",
+            "assistant_message",
+            -> {
+                handleItemCompleted(p, completesTurn = false)
                 true
             }
             else -> false
@@ -478,6 +516,8 @@ internal class IncomingEventRouter(
     private fun handleTurnFailed(params: Map<String, JSONValue>?) {
         val p = params ?: return
         val threadId = resolveThreadId(p) ?: IncomingNotificationParsers.extractThreadId(p) ?: return
+        val turnId = IncomingNotificationParsers.extractTurnIdForTurnLifecycleEvent(p)
+        cancelAssistantSilenceFinalize(threadId, turnId)
         onTurnFinished(threadId)
         handleErrorNotification(p)
     }
@@ -486,6 +526,7 @@ internal class IncomingEventRouter(
         val p = params ?: return
         val threadId = resolveThreadId(p) ?: return
         val turnId = IncomingNotificationParsers.extractTurnIdForTurnLifecycleEvent(p)
+        cancelAssistantSilenceFinalize(threadId, turnId)
         onTurnFinished(threadId)
         if (turnId != null) {
             scope.launch {
@@ -519,8 +560,52 @@ internal class IncomingEventRouter(
         markTurnActiveFromLiveEvent(threadId, turnId)
         scope.launch {
             messageTimeline.appendAssistantDelta(threadId, turnId, itemId, delta, assistantPhase)
+            scheduleAssistantSilenceFinalize(threadId, turnId, itemId)
         }
     }
+
+    private fun scheduleAssistantSilenceFinalize(
+        threadId: String,
+        turnId: String?,
+        itemId: String?,
+    ) {
+        if (!itemId.isNullOrBlank()) return
+        val key = assistantSilenceKey(threadId, turnId)
+        assistantSilenceFinalizeJobs.remove(key)?.cancel()
+        assistantSilenceFinalizeJobs[key] =
+            scope.launch {
+                delay(ASSISTANT_STREAM_SILENCE_FINALIZE_MS)
+                assistantSilenceFinalizeJobs.remove(key)
+                messageTimeline.finishStreamingMessages(
+                    threadId = threadId,
+                    turnId = turnId,
+                    assistantChatOnly = true,
+                )
+            }
+    }
+
+    private fun cancelAssistantSilenceFinalize(
+        threadId: String,
+        turnId: String?,
+    ) {
+        val keys =
+            if (turnId.isNullOrBlank()) {
+                assistantSilenceFinalizeJobs.keys.filter { it.startsWith("$threadId|") }
+            } else {
+                listOf(
+                    assistantSilenceKey(threadId, turnId),
+                    assistantSilenceKey(threadId, null),
+                )
+            }
+        keys.forEach { key ->
+            assistantSilenceFinalizeJobs.remove(key)?.cancel()
+        }
+    }
+
+    private fun assistantSilenceKey(
+        threadId: String,
+        turnId: String?,
+    ): String = "$threadId|${turnId?.trim()?.takeIf { it.isNotEmpty() } ?: "__turnless__"}"
 
     private fun handleItemCompleted(
         params: Map<String, JSONValue>?,
@@ -551,6 +636,7 @@ internal class IncomingEventRouter(
                         val assistantPhase =
                             decoded.assistantPhase ?: IncomingNotificationParsers.extractAssistantPhase(p, itemObj)
                         scope.launch {
+                            cancelAssistantSilenceFinalize(threadId, turnId)
                             messageTimeline.completeAssistantMessage(
                                 threadId = threadId,
                                 turnId = turnId,
@@ -560,7 +646,7 @@ internal class IncomingEventRouter(
                                 assistantPhase = assistantPhase,
                             )
                         }
-                        if (completesTurn) {
+                        if (completesTurn && turnId.isNullOrBlank()) {
                             onTurnFinished(threadId)
                         }
                     }
@@ -664,6 +750,7 @@ internal class IncomingEventRouter(
         val assistantPhase = IncomingNotificationParsers.extractAssistantPhase(params)
         recordTurnThread(turnId, threadId)
         scope.launch {
+            cancelAssistantSilenceFinalize(threadId, turnId)
             messageTimeline.completeAssistantMessage(
                 threadId = threadId,
                 turnId = turnId,
@@ -672,7 +759,7 @@ internal class IncomingEventRouter(
                 assistantPhase = assistantPhase,
             )
         }
-        if (completesTurn) {
+        if (completesTurn && turnId.isNullOrBlank()) {
             onTurnFinished(threadId)
         }
     }
@@ -907,6 +994,7 @@ internal class IncomingEventRouter(
                 ?: firstString(p, listOf("call_id", "callId", "id"))
                 ?: event?.let { firstString(it, listOf("call_id", "callId", "id")) }
         scope.launch {
+            cancelAssistantSilenceFinalize(threadId, turnId)
             messageTimeline.completeAssistantMessage(
                 threadId = threadId,
                 turnId = turnId,

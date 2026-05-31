@@ -20,7 +20,7 @@ internal suspend fun CodexService.handleMissingThread(threadId: String) {
     _olderHistoryErrorByThread.value = _olderHistoryErrorByThread.value - tid
     if (_activeThreadId.value == tid) {
         _activeThreadId.value = null
-        sessionPersistence.saveLastActiveThreadId(null)
+        persistActiveThreadId(null)
     }
     publishThreads(_threads.value.filter { it.id != tid })
     runCatching { refreshThreadsInternal() }

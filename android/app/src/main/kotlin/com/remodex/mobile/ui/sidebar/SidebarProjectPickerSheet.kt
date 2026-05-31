@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Folder
@@ -53,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -787,7 +789,7 @@ private fun SessionTypeSelector(
             SessionModeCard(
                 title = stringResource(R.string.sidebar_project_picker_session_cloud),
                 body = stringResource(R.string.sidebar_project_picker_session_cloud_desc),
-                icon = LucideR.drawable.lucide_ic_cloud,
+                imageVector = Icons.Outlined.ChatBubbleOutline,
                 selected = selected == NewThreadSessionType.CloudOnly,
                 colors = colors,
                 enabled = enabled && !cloudBusy,
@@ -805,7 +807,8 @@ private fun SessionTypeSelector(
 private fun SessionModeCard(
     title: String,
     body: String,
-    icon: Int,
+    icon: Int? = null,
+    imageVector: ImageVector? = null,
     selected: Boolean,
     colors: SidebarColorPalette,
     enabled: Boolean,
@@ -836,6 +839,7 @@ private fun SessionModeCard(
             ) {
                 IconBadge(
                     icon = icon,
+                    imageVector = imageVector,
                     colors = colors,
                     selected = selected,
                 )
@@ -918,7 +922,7 @@ private fun NewThreadPreviewSection(
                     colors = colors,
                 )
                 PreviewRow(
-                    icon = LucideR.drawable.lucide_ic_cloud,
+                    imageVector = Icons.Outlined.ChatBubbleOutline,
                     label = stringResource(R.string.sidebar_project_picker_preview_mode),
                     value = mode,
                     colors = colors,
@@ -943,7 +947,8 @@ private fun NewThreadPreviewSection(
 
 @Composable
 private fun PreviewRow(
-    icon: Int,
+    icon: Int? = null,
+    imageVector: ImageVector? = null,
     label: String,
     value: String,
     colors: SidebarColorPalette,
@@ -956,12 +961,21 @@ private fun PreviewRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(
-                painter = painterResource(icon),
-                contentDescription = null,
-                tint = colors.primaryText,
-                modifier = Modifier.size(18.dp),
-            )
+            if (imageVector != null) {
+                Icon(
+                    imageVector = imageVector,
+                    contentDescription = null,
+                    tint = colors.primaryText,
+                    modifier = Modifier.size(18.dp),
+                )
+            } else if (icon != null) {
+                Icon(
+                    painter = painterResource(icon),
+                    contentDescription = null,
+                    tint = colors.primaryText,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
             Text(
                 text = label,
                 modifier = Modifier.weight(1f),
@@ -1315,7 +1329,7 @@ private fun NewThreadFloatingCtas(
                 } else {
                     if (sessionType == NewThreadSessionType.CloudOnly) {
                         Icon(
-                            painter = painterResource(LucideR.drawable.lucide_ic_cloud),
+                            imageVector = Icons.Outlined.ChatBubbleOutline,
                             contentDescription = null,
                             tint = if (enabled) colors.background else colors.secondaryText,
                             modifier = Modifier.size(20.dp),
@@ -1411,7 +1425,8 @@ private fun SectionLabel(
 
 @Composable
 private fun IconBadge(
-    icon: Int,
+    icon: Int? = null,
+    imageVector: ImageVector? = null,
     colors: SidebarColorPalette,
     selected: Boolean,
     modifier: Modifier = Modifier,
@@ -1423,12 +1438,21 @@ private fun IconBadge(
         border = BorderStroke(1.dp, colors.border),
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(
-                painter = painterResource(icon),
-                contentDescription = null,
-                tint = if (selected) colors.background else colors.primaryText,
-                modifier = Modifier.size(20.dp),
-            )
+            if (imageVector != null) {
+                Icon(
+                    imageVector = imageVector,
+                    contentDescription = null,
+                    tint = if (selected) colors.background else colors.primaryText,
+                    modifier = Modifier.size(20.dp),
+                )
+            } else if (icon != null) {
+                Icon(
+                    painter = painterResource(icon),
+                    contentDescription = null,
+                    tint = if (selected) colors.background else colors.primaryText,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }

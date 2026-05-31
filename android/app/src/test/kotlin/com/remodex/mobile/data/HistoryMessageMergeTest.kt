@@ -652,6 +652,7 @@ class HistoryMessageMergeTest {
         assertEquals(listOf(CodexMessageRole.user, CodexMessageRole.assistant), merged.map { it.role })
         assertEquals(listOf("prompt from desktop", "partial answer from desktop"), merged.map { it.text })
         assertEquals(listOf("user-1", "assistant-1"), merged.map { it.itemId })
+        assertEquals(false, merged[1].isStreaming)
     }
 
     private fun message(

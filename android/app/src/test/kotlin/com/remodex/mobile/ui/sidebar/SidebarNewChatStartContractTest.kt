@@ -18,8 +18,11 @@ import com.remodex.mobile.core.model.PendingStructuredInputRequest
 import com.remodex.mobile.core.model.RPCMessage
 import com.remodex.mobile.core.transport.ConnectionState
 import com.remodex.mobile.data.CodexRepository
+import com.remodex.mobile.services.EmptyTrustedDeviceCodexRepository
+import com.remodex.mobile.ui.draft.NewChatDraftSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
@@ -42,9 +45,35 @@ class SidebarNewChatStartContractTest {
             assertEquals("thread-1", repo.activeThreadId.value)
             assertEquals(listOf("start:/repo", "active:thread-1"), repo.events)
         }
+
+    @Test
+    fun floatingChatDraftTarget_usesQuickChatWhenChatsTabIsSelected() {
+        val target =
+            sidebarFloatingChatDraftTarget(
+                listTab = SidebarListTab.Chats,
+                activeThreadId = "project-thread",
+                threads = listOf(CodexThread(id = "project-thread", cwd = "/repo")),
+            )
+
+        assertEquals(NewChatDraftSource.generalChat, target.source)
+        assertNull(target.preferredProjectPath)
+    }
+
+    @Test
+    fun floatingChatDraftTarget_usesActiveProjectWhenProjectsTabIsSelected() {
+        val target =
+            sidebarFloatingChatDraftTarget(
+                listTab = SidebarListTab.Projects,
+                activeThreadId = "project-thread",
+                threads = listOf(CodexThread(id = "project-thread", cwd = "/repo")),
+            )
+
+        assertEquals(NewChatDraftSource.generalChat, target.source)
+        assertEquals("/repo", target.preferredProjectPath)
+    }
 }
 
-private class ContractRepository : CodexRepository {
+private class ContractRepository : CodexRepository, EmptyTrustedDeviceCodexRepository {
     val events = mutableListOf<String>()
 
     private val mutableThreads = MutableStateFlow<List<CodexThread>>(emptyList())

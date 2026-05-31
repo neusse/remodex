@@ -143,6 +143,21 @@ class SidebarThreadGroupingTest {
     }
 
     @Test
+    fun makeGroups_bucketsWindowsAdHocCodexCwdsIntoChats() {
+        val adhoc = thread("t1", cwd = "C:\\Users\\test\\Documents\\Codex\\2026-05-06\\question")
+        val session = thread("t2", cwd = "C:\\Users\\test\\.codex\\sessions\\2026\\05\\06\\foo.jsonl")
+        val project = thread("t3", cwd = "C:\\Users\\test\\project-a")
+
+        val groups = SidebarThreadGrouping.makeGroups(listOf(adhoc, session, project))
+        val chatsGroup = groups.first { it.kind == SidebarThreadGroupKind.Chats }
+        val projectGroups = groups.filter { it.kind == SidebarThreadGroupKind.Project }
+
+        assertEquals(listOf("t1", "t2").sorted(), chatsGroup.threads.map { it.id }.sorted())
+        assertEquals(1, projectGroups.size)
+        assertEquals("C:\\Users\\test\\project-a", projectGroups.first().projectPath)
+    }
+
+    @Test
     fun makeGroups_keepsWindowsProjectPathsInProjectGroups() {
         val driveBackslash = thread("t1", cwd = "C:\\Users\\test\\project-a")
         val driveSlash = thread("t2", cwd = "C:/Users/test/project-b")

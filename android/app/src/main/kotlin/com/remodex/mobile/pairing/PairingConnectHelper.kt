@@ -25,11 +25,11 @@ fun buildWebSocketConnectParams(
 ): Pair<String, String> {
     val relayRaw =
         snap.relayUrl?.trim()?.takeIf { it.isNotEmpty() }
-            ?: error("No saved pairing route — scan a pairing QR first.")
+            ?: error("No relay URL — scan a pairing QR first.")
     if (relayHostOverride.trim().isEmpty() && isLoopbackRelayHost(relayRaw)) {
         throw LoopbackRelayException(
-            "The saved local route points back to this phone instead of your computer. " +
-                "Enter your computer's Wi-Fi IPv4 from Settings. Android emulator: use the emulator host address.",
+            "Relay uses 127.0.0.1 / localhost — on the phone that points to the device itself, not your PC. " +
+                "Enter your computer's Wi‑Fi IPv4 (e.g. from ipconfig). Android emulator: try 10.0.2.2.",
         )
     }
     val relay = applyRelayHostOverride(relayRaw, relayHostOverride)

@@ -136,6 +136,7 @@ internal fun buildComposerAutocompleteState(
                 listOf(
                     "review" to "Review current changes",
                     "review-base" to "Review against default branch",
+                    "pet" to "Show the companion pet",
                     "compact" to "Compact conversation context",
                     "feedback" to "Report a bug or product feedback",
                     "status" to "Summarize runtime status",

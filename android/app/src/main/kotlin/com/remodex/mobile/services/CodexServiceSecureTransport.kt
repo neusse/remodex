@@ -162,8 +162,6 @@ internal suspend fun CodexService.performSecureHandshake() {
                     )
         }
 
-    val relayProtocolVersion =
-        snapshot.relayProtocolVersion?.toIntOrNull() ?: CODEX_SECURE_PROTOCOL_VERSION
     val lastSeq = snapshot.relayLastAppliedBridgeOutboundSeq?.toIntOrNull() ?: 0
 
     val clientNonceBytes = RemodexNativeCrypto.randomBytes(32)
@@ -173,7 +171,7 @@ internal suspend fun CodexService.performSecureHandshake() {
 
     val clientHello =
         SecureClientHello(
-            protocolVersion = relayProtocolVersion,
+            protocolVersion = CODEX_SECURE_PROTOCOL_VERSION,
             sessionId = sessionId,
             handshakeMode = handshakeMode,
             phoneDeviceId = phone.phoneDeviceId,
@@ -297,6 +295,8 @@ internal suspend fun CodexService.performSecureHandshake() {
                 macDeviceId,
                 serverHello.macIdentityPublicKey,
                 snapshot.relayUrl,
+                sessionId,
+                serverHello.displayName,
             )
         secureStore.writeCodable(CodexSecureKeys.trustedMacRegistry, nextRegistry)
         secureStore.writeString(CodexSecureKeys.lastTrustedMacDeviceId, macDeviceId)
@@ -318,18 +318,21 @@ private fun CodexService.trustMacRecord(
     deviceId: String,
     publicKey: String,
     relayURL: String?,
+    sessionId: String,
+    displayName: String?,
 ): CodexTrustedMacRegistry {
     val prev = existing.records[deviceId]
+    val now = Instant.now()
     val record =
         CodexTrustedMacRecord(
             macDeviceId = deviceId,
             macIdentityPublicKey = publicKey,
-            lastPairedAt = Instant.now(),
+            lastPairedAt = now,
             relayURL = relayURL ?: prev?.relayURL,
-            displayName = prev?.displayName,
-            lastResolvedSessionId = prev?.lastResolvedSessionId,
-            lastResolvedAt = prev?.lastResolvedAt,
-            lastUsedAt = Instant.now(),
+            displayName = displayName?.trim()?.takeIf { it.isNotEmpty() } ?: prev?.displayName,
+            lastResolvedSessionId = sessionId,
+            lastResolvedAt = now,
+            lastUsedAt = now,
         )
     return CodexTrustedMacRegistry(existing.records + (deviceId to record))
 }
